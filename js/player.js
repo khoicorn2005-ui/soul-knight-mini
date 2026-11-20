@@ -22,6 +22,8 @@ const ARROW_CODES = new Set([
  * Đại diện cho nhân vật người chơi với cơ chế di chuyển 8 hướng và trượt tường theo từng trục.
  */
 export class Player {
+  #aimAngle = 0;
+
   /**
    * @param {number} [x=480] Tọa độ tâm theo trục X (mặc định chính giữa canvas 960px).
    * @param {number} [y=288] Tọa độ tâm theo trục Y (mặc định chính giữa canvas 576px).
@@ -44,9 +46,24 @@ export class Player {
     this.maxEnergy = 100;
 
     this.facingX = 1;
+    this.aimAngle = 0;
     this.keys = new Set();
 
     this.#bindInputEvents();
+  }
+
+  /** @returns {number} */
+  get aimAngle() {
+    return this.#aimAngle;
+  }
+
+  /**
+   * Cập nhật góc ngắm và tự động xoay hướng nhìn nhân vật theo hướng chĩa súng.
+   * @param {number} angle
+   */
+  set aimAngle(angle) {
+    this.#aimAngle = angle;
+    this.facingX = Math.cos(angle) >= 0 ? 1 : -1;
   }
 
   /**
@@ -73,12 +90,6 @@ export class Player {
     }
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
       dy += 1;
-    }
-
-    if (dx < 0) {
-      this.facingX = -1;
-    } else if (dx > 0) {
-      this.facingX = 1;
     }
 
     if (dx === 0 && dy === 0) {
@@ -147,6 +158,37 @@ export class Player {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(visorX + 2 + eyeOffset, top + 8, 2, 3);
     ctx.fillRect(visorX + 6 + eyeOffset, top + 8, 2, 3);
+
+    this.#drawWeapon(ctx, drawX, drawY);
+  }
+
+  #drawWeapon(ctx, drawX, drawY) {
+    ctx.save();
+    ctx.translate(drawX, drawY + 2);
+    ctx.rotate(this.#aimAngle);
+    if (Math.cos(this.#aimAngle) < 0) {
+      ctx.scale(1, -1);
+    }
+
+    // Tay cầm súng
+    ctx.fillStyle = '#4e342e';
+    ctx.fillRect(4, 1, 4, 5);
+
+    // Viền tối và thân súng xám đậm
+    ctx.fillStyle = '#141824';
+    ctx.fillRect(3, -4, 13, 6);
+    ctx.fillStyle = '#454d61';
+    ctx.fillRect(4, -3, 11, 4);
+    ctx.fillStyle = '#737d96';
+    ctx.fillRect(4, -3, 11, 1);
+
+    // Nòng súng ngắn phía trước
+    ctx.fillStyle = '#141824';
+    ctx.fillRect(15, -3, 4, 4);
+    ctx.fillStyle = '#9aa3b8';
+    ctx.fillRect(15, -2, 3, 2);
+
+    ctx.restore();
   }
 
   #bindInputEvents() {
