@@ -205,3 +205,150 @@ export class AimSystem {
     ctx.restore();
   }
 }
+
+/**
+ * Cấu hình 2 vũ khí đặc trưng của Soul Knight.
+ */
+export const WEAPONS = Object.freeze({
+  pistol: Object.freeze({
+    id: 'pistol',
+    name: 'Súng Lục',
+    energyCost: 0,
+    fireRate: 0.25,
+    bulletCount: 1,
+    spread: 0.04,
+    bulletSpeed: 540,
+    bulletRadius: 4,
+    damage: 3,
+    bulletColor: '#ffeb3b',
+    bodyColor: '#b0bec5',
+    barrelLength: 16,
+  }),
+  shotgun: Object.freeze({
+    id: 'shotgun',
+    name: 'Shotgun',
+    energyCost: 3,
+    fireRate: 0.65,
+    bulletCount: 5,
+    spread: 0.38,
+    bulletSpeed: 480,
+    bulletRadius: 4,
+    damage: 2,
+    bulletColor: '#ff9800',
+    bodyColor: '#8d6e63',
+    barrelLength: 22,
+  }),
+});
+
+/**
+ * Hệ thống quản lý 2 ô vũ khí, tốc độ bắn, tiêu hao năng lượng và sinh đạn.
+ */
+export class WeaponSystem {
+  /**
+   * @param {Array<object>} [weapons=[WEAPONS.pistol, WEAPONS.shotgun]]
+   */
+  constructor(weapons = [WEAPONS.pistol, WEAPONS.shotgun]) {
+    this.weapons = weapons.slice(0, 2);
+    this.currentIndex = 0;
+    this.cooldown = 0;
+    this.outOfEnergyTimer = 0;
+    this.switchFlashTimer = 0;
+    this.recoilTimer = 0;
+  }
+
+  /**
+   * Trả về cấu hình vũ khí đang cầm ở ô hiện tại.
+   * @returns {object}
+   */
+  getCurrentWeapon() {
+    return this.weapons[this.currentIndex];
+  }
+
+  /**
+   * Đổi qua lại giữa ô vũ khí 0 và ô 1, đặt lại nhẹ hiệu ứng chuyển súng.
+   * @returns {object}
+   */
+  switchWeapon() {
+    if (this.weapons.length > 1) {
+      this.currentIndex = this.currentIndex === 0 ? 1 : 0;
+    }
+    this.switchFlashTimer = 0.15;
+    this.outOfEnergyTimer = 0;
+    return this.getCurrentWeapon();
+  }
+
+  /**
+   * Giảm dần thời gian hồi bắn và các bộ đếm hiệu ứng.
+   * @param {number} dt
+   */
+  update(dt) {
+    if (dt <= 0) {
+      return;
+    }
+
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    this.outOfEnergyTimer = Math.max(0, this.outOfEnergyTimer - dt);
+    this.switchFlashTimer = Math.max(0, this.switchFlashTimer - dt);
+    this.recoilTimer = Math.max(0, this.recoilTimer - dt);
+  }
+
+  /**
+   * Kiểm tra hồi chiêu và năng lượng để bắn đạn từ đầu nòng súng theo aimAngle.
+   * @param {{ x: number, y: number, energy: number }} player
+   * @param {number} aimAngle
+   * @param {import('./bullet.js').BulletManager} bulletManager
+   * @returns {boolean}
+   */
+  tryFire(player, aimAngle, bulletManager) {
+    if (!bulletManager || this.cooldown > 0) {
+      return false;
+    }
+
+    const weapon = this.getCurrentWeapon();
+    if (!weapon) {
+      return false;
+    }
+
+    if (player.energy < weapon.energyCost) {
+      this.outOfEnergyTimer = 0.8;
+      return false;
+    }
+
+    player.energy = Math.max(0, player.energy - weapon.energyCost);
+    this.cooldown = weapon.fireRate;
+    this.recoilTimer = 0.08;
+
+    const muzzleX = player.x + Math.cos(aimAngle) * weapon.barrelLength;
+    const muzzleY = player.y + Math.sin(aimAngle) * weapon.barrelLength;
+
+    if (weapon.bulletCount > 1) {
+      const step = weapon.spread / (weapon.bulletCount - 1);
+      const startAngle = aimAngle - weapon.spread / 2;
+      for (let i = 0; i < weapon.bulletCount; i++) {
+        const angle = startAngle + step * i;
+        bulletManager.spawn(
+          muzzleX,
+          muzzleY,
+          angle,
+          weapon.bulletSpeed,
+          weapon.damage,
+          weapon.bulletRadius,
+          weapon.bulletColor,
+        );
+      }
+    } else {
+      const angle = aimAngle + (Math.random() - 0.5) * weapon.spread;
+      bulletManager.spawn(
+        muzzleX,
+        muzzleY,
+        angle,
+        weapon.bulletSpeed,
+        weapon.damage,
+        weapon.bulletRadius,
+        weapon.bulletColor,
+      );
+    }
+
+    return true;
+  }
+}

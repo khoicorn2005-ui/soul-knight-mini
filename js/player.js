@@ -1,5 +1,7 @@
 // Quản lý nhân vật người chơi: di chuyển 8 hướng, lướt né (dash), HP, giáp (shield) và năng lượng.
 
+import { WeaponSystem } from './weapon.js';
+
 const MOVEMENT_CODES = new Set([
   'KeyW',
   'KeyA',
@@ -19,7 +21,7 @@ const ARROW_CODES = new Set([
 ]);
 
 /**
- * Đại diện cho nhân vật người chơi với cơ chế di chuyển 8 hướng và trượt tường theo từng trục.
+ * Đại diện cho nhân vật người chơi với cơ chế di chuyển 8 hướng, trượt tường và bắn vũ khí.
  */
 export class Player {
   #aimAngle = 0;
@@ -27,10 +29,12 @@ export class Player {
   /**
    * @param {number} [x=480] Tọa độ tâm theo trục X (mặc định chính giữa canvas 960px).
    * @param {number} [y=288] Tọa độ tâm theo trục Y (mặc định chính giữa canvas 576px).
+   * @param {HTMLCanvasElement | null} [canvas=null] Canvas để lắng nghe chuột bắn và cuộn đổi súng.
    */
-  constructor(x = 960 / 2, y = 576 / 2) {
+  constructor(x = 960 / 2, y = 576 / 2, canvas = null) {
     this.x = x;
     this.y = y;
+    this.canvas = canvas;
 
     // Hitbox nhỏ hơn ô gạch 32px để dễ lách qua khe hở giữa các cột/thùng
     this.width = 22;
@@ -48,6 +52,8 @@ export class Player {
     this.facingX = 1;
     this.aimAngle = 0;
     this.keys = new Set();
+    this.isFiring = false;
+    this.weaponSystem = new WeaponSystem();
 
     this.#bindInputEvents();
   }
@@ -67,11 +73,12 @@ export class Player {
   }
 
   /**
-   * Cập nhật vị trí nhân vật theo 8 hướng và xử lý va chạm trượt tường theo từng trục.
+   * Cập nhật vị trí nhân vật, trượt tường và xử lý bắn đạn khi đang giữ chuột trái.
    * @param {number} dt Thời gian trôi qua giữa hai khung hình (giây).
    * @param {import('./map.js').DungeonMap} map Bản đồ hiện tại.
+   * @param {import('./bullet.js').BulletManager | null} [bulletManager=null]
    */
-  update(dt, map) {
+  update(dt, map, bulletManager = null) {
     if (dt <= 0) {
       return;
     }
@@ -92,30 +99,33 @@ export class Player {
       dy += 1;
     }
 
-    if (dx === 0 && dy === 0) {
-      return;
+    if (dx !== 0 || dy !== 0) {
+      // Chuẩn hóa vector khi đi chéo để tốc độ không vượt quá tốc độ đi thẳng
+      if (dx !== 0 && dy !== 0) {
+        const length = Math.hypot(dx, dy);
+        dx /= length;
+        dy /= length;
+      }
+
+      const stepX = dx * this.speed * dt;
+      const stepY = dy * this.speed * dt;
+
+      if (stepX !== 0) {
+        this.#moveAxis('x', stepX, map);
+      }
+      if (stepY !== 0) {
+        this.#moveAxis('y', stepY, map);
+      }
     }
 
-    // Chuẩn hóa vector khi đi chéo để tốc độ không vượt quá tốc độ đi thẳng
-    if (dx !== 0 && dy !== 0) {
-      const length = Math.hypot(dx, dy);
-      dx /= length;
-      dy /= length;
-    }
-
-    const stepX = dx * this.speed * dt;
-    const stepY = dy * this.speed * dt;
-
-    if (stepX !== 0) {
-      this.#moveAxis('x', stepX, map);
-    }
-    if (stepY !== 0) {
-      this.#moveAxis('y', stepY, map);
+    this.weaponSystem.update(dt);
+    if (this.isFiring && bulletManager) {
+      this.weaponSystem.tryFire(this, this.#aimAngle, bulletManager);
     }
   }
 
   /**
-   * Vẽ nhân vật hiệp sĩ tạm thời lên canvas tại tọa độ đã làm tròn pixel.
+   * Vẽ nhân vật hiệp sĩ, khẩu súng đang cầm và cảnh báo hết năng lượng (nếu có).
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
@@ -160,59 +170,128 @@ export class Player {
     ctx.fillRect(visorX + 6 + eyeOffset, top + 8, 2, 3);
 
     this.#drawWeapon(ctx, drawX, drawY);
+
+    if (this.weaponSystem.outOfEnergyTimer > 0) {
+      this.#drawOutOfEnergyWarning(ctx, drawX, top);
+    }
   }
 
   #drawWeapon(ctx, drawX, drawY) {
+    const weapon = this.weaponSystem.getCurrentWeapon();
+    const recoilOffset = this.weaponSystem.recoilTimer > 0 ? -2 : 0;
+    const switchOffset = this.weaponSystem.switchFlashTimer > 0 ? -2 : 0;
+
     ctx.save();
-    ctx.translate(drawX, drawY + 2);
+    ctx.translate(drawX, drawY + 2 + switchOffset);
     ctx.rotate(this.#aimAngle);
     if (Math.cos(this.#aimAngle) < 0) {
       ctx.scale(1, -1);
     }
 
-    // Tay cầm súng
-    ctx.fillStyle = '#4e342e';
-    ctx.fillRect(4, 1, 4, 5);
+    if (weapon.id === 'shotgun') {
+      // Báng gỗ nâu đậm và thân Shotgun dài
+      ctx.fillStyle = '#141824';
+      ctx.fillRect(recoilOffset + 1, -4, weapon.barrelLength + 1, 7);
 
-    // Viền tối và thân súng xám đậm
-    ctx.fillStyle = '#141824';
-    ctx.fillRect(3, -4, 13, 6);
-    ctx.fillStyle = '#454d61';
-    ctx.fillRect(4, -3, 11, 4);
-    ctx.fillStyle = '#737d96';
-    ctx.fillRect(4, -3, 11, 1);
+      ctx.fillStyle = weapon.bodyColor;
+      ctx.fillRect(recoilOffset + 2, -2, 8, 4);
+      ctx.fillStyle = '#a1887f';
+      ctx.fillRect(recoilOffset + 2, -2, 7, 1);
 
-    // Nòng súng ngắn phía trước
-    ctx.fillStyle = '#141824';
-    ctx.fillRect(15, -3, 4, 4);
-    ctx.fillStyle = '#9aa3b8';
-    ctx.fillRect(15, -2, 3, 2);
+      // Nòng thép dài và ốp tay bơm
+      ctx.fillStyle = '#455a64';
+      ctx.fillRect(recoilOffset + 8, -3, weapon.barrelLength - 8, 4);
+      ctx.fillStyle = '#90a4ae';
+      ctx.fillRect(recoilOffset + 9, -3, weapon.barrelLength - 10, 1);
+      ctx.fillStyle = '#6d4c41';
+      ctx.fillRect(recoilOffset + 11, 1, 7, 2);
+    } else {
+      // Tay cầm và thân Súng Lục gọn màu xám bạc
+      ctx.fillStyle = '#4e342e';
+      ctx.fillRect(recoilOffset + 4, 1, 4, 5);
+
+      ctx.fillStyle = '#141824';
+      ctx.fillRect(recoilOffset + 3, -4, weapon.barrelLength - 2, 6);
+      ctx.fillStyle = weapon.bodyColor;
+      ctx.fillRect(recoilOffset + 4, -3, weapon.barrelLength - 4, 4);
+      ctx.fillStyle = '#eceff1';
+      ctx.fillRect(recoilOffset + 4, -3, weapon.barrelLength - 4, 1);
+      ctx.fillStyle = '#546e7a';
+      ctx.fillRect(recoilOffset + 4, 0, weapon.barrelLength - 6, 1);
+    }
 
     ctx.restore();
   }
 
+  #drawOutOfEnergyWarning(ctx, drawX, top) {
+    ctx.save();
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillText('Hết năng lượng!', drawX + 1, top - 5);
+    ctx.fillStyle = '#ff8a80';
+    ctx.fillText('Hết năng lượng!', drawX, top - 6);
+    ctx.restore();
+  }
+
   #bindInputEvents() {
-    if (typeof window === 'undefined') {
-      return;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        if (ARROW_CODES.has(e.code)) {
+          e.preventDefault();
+        }
+        if (MOVEMENT_CODES.has(e.code)) {
+          this.keys.add(e.code);
+        }
+        if (e.code === 'KeyQ' && !e.repeat) {
+          this.weaponSystem.switchWeapon();
+        }
+        // Phim test tam thoi o Chuong 4 de hoi nang luong, se bo khi co ngoc nang luong o Chuong 6
+        if (e.code === 'KeyR' && !e.repeat) {
+          this.energy = this.maxEnergy;
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        this.keys.delete(e.code);
+      });
+
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+          this.isFiring = false;
+        }
+      });
+
+      // Xóa trạng thái phím và ngừng bắn khi mất tiêu điểm cửa sổ
+      window.addEventListener('blur', () => {
+        this.keys.clear();
+        this.isFiring = false;
+      });
     }
 
-    window.addEventListener('keydown', (e) => {
-      if (ARROW_CODES.has(e.code)) {
-        e.preventDefault();
-      }
-      if (MOVEMENT_CODES.has(e.code)) {
-        this.keys.add(e.code);
-      }
-    });
+    if (this.canvas && typeof this.canvas.addEventListener === 'function') {
+      this.canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 0) {
+          this.isFiring = true;
+        }
+      });
 
-    window.addEventListener('keyup', (e) => {
-      this.keys.delete(e.code);
-    });
+      this.canvas.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+          this.isFiring = false;
+        }
+      });
 
-    // Xóa trạng thái phím khi mất tiêu điểm cửa sổ để tránh kẹt phím di chuyển
-    window.addEventListener('blur', () => {
-      this.keys.clear();
-    });
+      this.canvas.addEventListener(
+        'wheel',
+        (e) => {
+          e.preventDefault();
+          this.weaponSystem.switchWeapon();
+        },
+        { passive: false },
+      );
+    }
   }
 
   #moveAxis(axis, delta, map) {

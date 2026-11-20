@@ -6,8 +6,10 @@ body {
 body {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  gap: 10px;
   background-color: #121218;
 }
 
@@ -15,4 +17,14 @@ body {
   display: block;
   border: 1px solid #444;
   image-rendering: pixelated;
+}
+
+.controls-hint {
+  margin: 0;
+  background: transparent;
+  color: #a8b0c4;
+  font-family: monospace;
+  font-size: 12px;
+  text-align: center;
+  user-select: none;
 }
