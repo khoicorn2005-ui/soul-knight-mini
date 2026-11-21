@@ -1,5 +1,7 @@
 // Quản lý bản đồ, lưới gạch 30x18 (32x32px), 4 bố cục phòng chơi, vật cản và cổng tường phải.
 
+import { assets } from './assets.js';
+
 export const TILE_SIZE = 32;
 export const MAP_COLS = 30;
 export const MAP_ROWS = 18;
@@ -10,6 +12,16 @@ export const TILE_TYPES = Object.freeze({
   PILLAR: 2,
   CRATE: 3,
 });
+
+const FLOOR_VARIANT_KEYS = [
+  'floor_2',
+  'floor_3',
+  'floor_4',
+  'floor_5',
+  'floor_6',
+  'floor_7',
+  'floor_8',
+];
 
 // Mảng 4 bố cục phòng hầm ngục chuẩn 18 hàng × 30 cột.
 // Luôn giữ trống (0) tại 3 vùng bắt buộc:
@@ -109,6 +121,16 @@ export const ROOM_LAYOUTS = [
 export const roomLayout = ROOM_LAYOUTS[0];
 
 /**
+ * Băm tọa độ ô cố định thành số nguyên dương để chọn biến thể gạch không nhấp nháy.
+ * @param {number} col
+ * @param {number} row
+ * @returns {number}
+ */
+function hashTile(col, row) {
+  return (Math.imul(col + 11, 73856093) ^ Math.imul(row + 19, 19349663)) >>> 0;
+}
+
+/**
  * Đại diện cho bản đồ tilemap của 1 phòng hầm ngục và cung cấp hàm vẽ + kiểm tra va chạm ô gạch.
  */
 export class DungeonMap {
@@ -142,33 +164,46 @@ export class DungeonMap {
   }
 
   /**
-   * Vẽ toàn bộ bản đồ gạch và khung cửa bên tường phải lên canvas context.
+   * Vẽ bản đồ theo 2 lượt (Sàn + bóng chân tường -> Tường, Cột, Thùng, Cửa) giữ nguyên nét pixel sắc nét.
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
+    ctx.imageSmoothingEnabled = false;
     const s = this.tileSize;
+
+    // Lượt 1: Vẽ toàn bộ mặt sàn trước (kể cả dưới chân cột/thùng) và bóng đổ mảnh dưới chân tường trên
+    for (let row = 0; row < this.rows; row++) {
+      for (let col = 0; col < this.cols; col++) {
+        const tile = this.layout[row][col];
+        if (tile === TILE_TYPES.WALL) {
+          continue;
+        }
+        const x = col * s;
+        const y = row * s;
+        this.#drawFloorTile(ctx, x, y, s, col, row);
+
+        if (row > 0 && this.layout[row - 1][col] === TILE_TYPES.WALL) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.30)';
+          ctx.fillRect(x, y, s, 6);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+          ctx.fillRect(x, y + 6, s, 4);
+        }
+      }
+    }
+
+    // Lượt 2: Vẽ tường, cột đá và thùng gỗ từ trên xuống dưới để phần nhô 2.5D không bị ô khác đè mất
     for (let row = 0; row < this.rows; row++) {
       for (let col = 0; col < this.cols; col++) {
         const tile = this.layout[row][col];
         const x = col * s;
         const y = row * s;
 
-        switch (tile) {
-          case TILE_TYPES.WALL:
-            this.#drawWallTile(ctx, x, y, s, col, row);
-            break;
-          case TILE_TYPES.PILLAR:
-            this.#drawFloorTile(ctx, x, y, s, col, row);
-            this.#drawPillarTile(ctx, x, y, s);
-            break;
-          case TILE_TYPES.CRATE:
-            this.#drawFloorTile(ctx, x, y, s, col, row);
-            this.#drawCrateTile(ctx, x, y, s);
-            break;
-          case TILE_TYPES.FLOOR:
-          default:
-            this.#drawFloorTile(ctx, x, y, s, col, row);
-            break;
+        if (tile === TILE_TYPES.WALL) {
+          this.#drawWallTile(ctx, x, y, s, col, row);
+        } else if (tile === TILE_TYPES.PILLAR) {
+          this.#drawPillarTile(ctx, x, y, s);
+        } else if (tile === TILE_TYPES.CRATE) {
+          this.#drawCrateTile(ctx, x, y, s);
         }
       }
     }
@@ -213,16 +248,18 @@ export class DungeonMap {
     const gateY = 7 * s;
     const gateW = s;
     const gateH = 4 * s;
+    const centerX = gateX + gateW / 2;
+    const centerY = gateY + gateH / 2;
 
     ctx.save();
 
-    // Khung đá hốc cửa ở chính giữa tường bên phải (cột 29, hàng 7-10)
-    ctx.fillStyle = '#20222e';
+    // Khung đá hốc cửa hòa hợp tông đá nâu ấm ở chính giữa tường phải (cột 29, hàng 7-10)
+    ctx.fillStyle = '#251e22';
     ctx.fillRect(gateX, gateY, gateW, gateH);
-    ctx.fillStyle = '#7b8099';
+    ctx.fillStyle = '#8c736b';
     ctx.fillRect(gateX, gateY, gateW, 4);
     ctx.fillRect(gateX, gateY + gateH - 4, gateW, 4);
-    ctx.fillStyle = '#494d60';
+    ctx.fillStyle = '#594846';
     ctx.fillRect(gateX, gateY + 4, 4, gateH - 8);
 
     const innerX = gateX + 4;
@@ -231,16 +268,23 @@ export class DungeonMap {
     const innerH = gateH - 12;
 
     if (this.isLocked) {
-      // Cổng đóng chặt: nền tối kèm song sắt đỏ cảnh báo chưa dọn phòng
-      ctx.fillStyle = '#180d12';
+      ctx.fillStyle = '#1b1116';
       ctx.fillRect(innerX, innerY, innerW, innerH);
 
-      // Các thanh ngang giữ song sắt
-      ctx.fillStyle = '#5c1414';
+      const doorClosedImg = assets.get('door_closed');
+      if (doorClosedImg) {
+        ctx.save();
+        ctx.translate(centerX + 2, centerY);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(doorClosedImg, -32, -16, 64, 32);
+        ctx.restore();
+      }
+
+      // Song sắt đỏ báo hiệu cửa đang khóa chặt khi chưa dọn xong phòng
+      ctx.fillStyle = 'rgba(92, 20, 20, 0.85)';
       ctx.fillRect(innerX, innerY + 18, innerW, 5);
       ctx.fillRect(innerX, innerY + innerH - 23, innerW, 5);
 
-      // Các song sắt dọc màu đỏ
       for (let offset = 3; offset < innerW - 2; offset += 7) {
         ctx.fillStyle = '#2e0808';
         ctx.fillRect(innerX + offset - 1, innerY, 5, innerH);
@@ -250,23 +294,30 @@ export class DungeonMap {
         ctx.fillRect(innerX + offset, innerY, 1, innerH);
       }
 
-      // Chốt khóa đỏ phát sáng ở giữa cửa
+      // Chốt khóa đỏ nổi bật ở giữa cửa
       ctx.fillStyle = '#2e0808';
-      ctx.fillRect(innerX + 6, gateY + gateH / 2 - 7, 14, 14);
+      ctx.fillRect(innerX + 6, centerY - 7, 14, 14);
       ctx.fillStyle = '#ff5252';
-      ctx.fillRect(innerX + 8, gateY + gateH / 2 - 5, 10, 10);
+      ctx.fillRect(innerX + 8, centerY - 5, 10, 10);
     } else {
-      // Cổng mở sáng nhẹ báo hiệu đã dọn xong phòng
+      // Cổng mở sáng xanh ngọc báo hiệu đã dọn xong phòng
       ctx.fillStyle = '#0f2533';
       ctx.fillRect(innerX, innerY, innerW, innerH);
 
-      ctx.fillStyle = 'rgba(79, 195, 247, 0.25)';
-      ctx.fillRect(innerX + 2, innerY + 2, innerW - 4, innerH - 4);
+      const doorOpenImg = assets.get('door_open');
+      if (doorOpenImg) {
+        ctx.save();
+        ctx.translate(centerX + 2, centerY);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(doorOpenImg, -32, -16, 64, 32);
+        ctx.restore();
+      }
 
-      ctx.fillStyle = 'rgba(128, 222, 234, 0.55)';
+      ctx.fillStyle = 'rgba(79, 195, 247, 0.28)';
+      ctx.fillRect(innerX + 2, innerY + 2, innerW - 4, innerH - 4);
+      ctx.fillStyle = 'rgba(128, 222, 234, 0.50)';
       ctx.fillRect(innerX + 6, innerY + 6, innerW - 12, innerH - 12);
 
-      // Bậc ngưỡng sáng nhẹ cạnh sàn báo lối thông
       ctx.fillStyle = '#80deea';
       ctx.fillRect(gateX, gateY + 6, 3, gateH - 12);
     }
@@ -275,7 +326,20 @@ export class DungeonMap {
   }
 
   #drawFloorTile(ctx, x, y, s, col, row) {
-    // Sàn xám đậm xen kẽ nhẹ giữa các ô kèm đường mạch gạch mờ
+    const h = hashTile(col, row);
+    // Ưu tiên ~75% gạch floor_1 phẳng sạch, ~25% còn lại rải các viên gạch nứt/sứt góc
+    let key = 'floor_1';
+    if (h % 4 === 0) {
+      key = FLOOR_VARIANT_KEYS[(h >>> 4) % FLOOR_VARIANT_KEYS.length];
+    }
+
+    const img = assets.get(key) ?? assets.get('floor_1');
+    if (img) {
+      ctx.drawImage(img, x, y, s, s);
+      return;
+    }
+
+    // Dự phòng khối màu cũ nếu ảnh chưa sẵn sàng
     ctx.fillStyle = (col + row) % 2 === 0 ? '#2a2b36' : '#272833';
     ctx.fillRect(x, y, s, s);
 
@@ -283,7 +347,6 @@ export class DungeonMap {
     ctx.fillRect(x, y, s, 1);
     ctx.fillRect(x, y, 1, s);
 
-    // Họa tiết đá nhỏ ngẫu nhiên cố định theo vị trí ô để sàn trông tự nhiên hơn
     if ((col * 7 + row * 13) % 5 === 0) {
       ctx.fillStyle = '#323442';
       ctx.fillRect(x + 8, y + 10, 4, 2);
@@ -292,22 +355,41 @@ export class DungeonMap {
   }
 
   #drawWallTile(ctx, x, y, s, col, row) {
-    // Mặt trên của tường (chiều sâu 2.5D nhẹ)
+    const h = hashTile(col, row);
+    let wallKey = 'wall_mid';
+
+    if (col === 0 && row > 0 && row < this.rows - 1) {
+      wallKey = 'wall_edge_left';
+    } else if (col === this.cols - 1 && row > 0 && row < this.rows - 1) {
+      wallKey = 'wall_edge_right';
+    } else if (row === 0 && col > 1 && col < this.cols - 2 && h % 7 === 0) {
+      wallKey = h % 2 === 0 ? 'wall_hole_1' : 'wall_hole_2';
+    }
+
+    const wallImg = assets.get(wallKey) ?? assets.get('wall_mid');
+    if (wallImg) {
+      ctx.drawImage(wallImg, x, y, s, s);
+
+      // Ghép thêm mép đỉnh đá (wall_top_mid) lên tường trên và dưới để tạo khối 2.5D rõ nét
+      if (row === 0 || row === this.rows - 1) {
+        const topRim = assets.get('wall_top_mid');
+        if (topRim) {
+          ctx.drawImage(topRim, 0, 12, 16, 4, x, y, s, 8);
+        }
+      }
+      return;
+    }
+
+    // Dự phòng khối màu cũ
     ctx.fillStyle = '#5a5e72';
     ctx.fillRect(x, y, s, 22);
-
-    // Viền sáng nổi ở mép trên tường
     ctx.fillStyle = '#7b8099';
     ctx.fillRect(x, y, s, 2);
-
-    // Mạch gạch đá trên mặt tường
     ctx.fillStyle = '#494d60';
     ctx.fillRect(x, y + 11, s, 1);
     const seamOffset = (col + row) % 2 === 0 ? 16 : 8;
     ctx.fillRect(x + seamOffset, y + 2, 1, 9);
     ctx.fillRect(x + ((seamOffset + 14) % s), y + 12, 1, 10);
-
-    // Mặt đứng phía trước tối hơn và bóng chân tường
     ctx.fillStyle = '#3d4052';
     ctx.fillRect(x, y + 22, s, 8);
     ctx.fillStyle = '#242633';
@@ -315,21 +397,29 @@ export class DungeonMap {
   }
 
   #drawPillarTile(ctx, x, y, s) {
-    // Bóng đổ nhẹ ở chân cột
+    const columnImg = assets.get('column');
+    if (columnImg) {
+      // Bóng tròn dẹt dưới chân cột đá
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      ctx.beginPath();
+      ctx.ellipse(x + s / 2, y + s - 2, 14, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sprite column.png gốc 16x48: cắt thân đế và phần chóp bát giác phóng đúng 2x (không bóp méo)
+      ctx.drawImage(columnImg, 0, 26, 16, 13, x, y + 6, s, 26);
+      ctx.drawImage(columnImg, 0, 3, 16, 12, x, y - 8, s, 24);
+      return;
+    }
+
+    // Dự phòng khối màu cũ
     ctx.fillStyle = '#191a24';
     ctx.fillRect(x + 2, y + s - 3, s - 4, 2);
-
-    // Khung viền tối ngoài cột đá
     ctx.fillStyle = '#2b2e3c';
     ctx.fillRect(x + 2, y + 1, 28, 28);
-
-    // Thân cột xám đá và viền sáng phía trên
     ctx.fillStyle = '#676c82';
     ctx.fillRect(x + 4, y + 3, 24, 18);
     ctx.fillStyle = '#8a90ab';
     ctx.fillRect(x + 4, y + 3, 24, 2);
-
-    // Mặt trước cột tạo khối 2.5D và ô chạm lõm ở đỉnh cột
     ctx.fillStyle = '#4b4f63';
     ctx.fillRect(x + 4, y + 21, 24, 6);
     ctx.fillStyle = '#575c70';
@@ -337,23 +427,30 @@ export class DungeonMap {
   }
 
   #drawCrateTile(ctx, x, y, s) {
-    // Bóng đổ nhẹ dưới chân thùng gỗ
+    const crateImg = assets.get('crate');
+    if (crateImg) {
+      // Bóng đổ nhẹ dưới chân thùng gỗ
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
+      ctx.beginPath();
+      ctx.ellipse(x + s / 2, y + s - 2, 14, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sprite crate.png gốc 16x24 (phần thân gỗ từ y=3..23) phóng đúng 2x đặt khít mép đáy ô 32x32
+      ctx.drawImage(crateImg, 0, 3, 16, 21, x, y - 10, s, 42);
+      return;
+    }
+
+    // Dự phòng khối màu cũ
     ctx.fillStyle = '#191a24';
     ctx.fillRect(x + 2, y + s - 2, s - 4, 2);
-
-    // Viền gỗ đậm bao quanh thùng
     ctx.fillStyle = '#4a2c16';
     ctx.fillRect(x + 2, y + 2, 28, 28);
-
-    // Thân thùng nâu gỗ, viền sáng cạnh trên và mặt gỗ bên trong
     ctx.fillStyle = '#8c5830';
     ctx.fillRect(x + 4, y + 4, 24, 24);
     ctx.fillStyle = '#a86e3e';
     ctx.fillRect(x + 4, y + 4, 24, 2);
     ctx.fillStyle = '#7a4b27';
     ctx.fillRect(x + 7, y + 7, 18, 18);
-
-    // Hai đường kẻ chéo tạo hình chữ X trên mặt thùng gỗ
     ctx.strokeStyle = '#543016';
     ctx.lineWidth = 2;
     ctx.beginPath();

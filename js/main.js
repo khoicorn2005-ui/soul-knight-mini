@@ -6,6 +6,7 @@ import { EnemyManager } from './enemy.js';
 import { LootManager } from './loot.js';
 import { Boss } from './boss.js';
 import { GameHUD, ScreenManager } from './ui.js';
+import { assets } from './assets.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -216,7 +217,7 @@ function togglePause() {
   }
 }
 
-openMainMenu();
+player.inputEnabled = false;
 
 if (typeof window !== 'undefined') {
   // Chặn các phím gameplay (Space, Q, E, T) ở pha capture khi không ở trạng thái PLAYING
@@ -406,5 +407,26 @@ function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
 }
 
-requestAnimationFrame(gameLoop);
-console.log('Game loop initialized');
+function drawLoadingScreen() {
+  ctx.fillStyle = '#121218';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#a8b0c4';
+  ctx.fillText('Đang tải đồ họa hầm ngục...', canvas.width / 2, canvas.height / 2);
+  ctx.restore();
+}
+
+async function init() {
+  screenManager.showScreen(GAME_STATES.PLAYING);
+  drawLoadingScreen();
+  await assets.loadAll();
+  openMainMenu();
+  requestAnimationFrame(gameLoop);
+  console.log('Game loop initialized');
+}
+
+init();

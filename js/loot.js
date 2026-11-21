@@ -1,6 +1,7 @@
 // Quản lý vật phẩm rơi từ quái (Ngọc năng lượng), Rương vũ khí và Cổng dịch chuyển sang phòng tiếp theo.
 
 import { WEAPONS } from './weapon.js';
+import { assets } from './assets.js';
 
 const ROOM_INNER_MIN_X = 38;
 const ROOM_INNER_MAX_X = 960 - 38;
@@ -343,37 +344,47 @@ export class WeaponChest {
     const top = drawY - height / 2;
 
     ctx.save();
+    ctx.imageSmoothingEnabled = false;
 
-    // Bóng đổ dưới chân rương
+    // Bóng đổ tròn mờ dưới chân rương
     ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
     ctx.beginPath();
     ctx.ellipse(drawX, top + height + 1, 16, 5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    if (this.state === 'closed') {
-      // Khung viền ngoài tối
+    const chestImg =
+      this.state === 'closed'
+        ? assets.get('chest_closed')
+        : assets.get('chest_open');
+
+    if (chestImg) {
+      // Phóng chẵn 2x từ sprite 16x16 lên 32x32 giữ nguyên nét pixel sắc cạnh
+      ctx.drawImage(chestImg, drawX - 16, drawY - 16, 32, 32);
+      if (this.state === 'opened' && this.weapon) {
+        const floatY = top - 16 + Math.sin(this.floatTime * 4) * 3.5;
+        drawFloatingWeaponIcon(ctx, drawX, floatY, this.weapon);
+      }
+    } else if (this.state === 'closed') {
+      // Dự phòng khối màu khi ảnh chưa sẵn sàng
       ctx.fillStyle = '#241409';
       ctx.fillRect(left, top, width, height);
 
-      // Thân rương gỗ nâu ấm và nắp rương
       ctx.fillStyle = '#8d5524';
       ctx.fillRect(left + 2, top + 2, width - 4, height - 4);
       ctx.fillStyle = '#b6783d';
       ctx.fillRect(left + 2, top + 2, width - 4, 8);
 
-      // Đai sắt viền vàng
       ctx.fillStyle = '#ffd54f';
       ctx.fillRect(left + 2, top + 9, width - 4, 2);
       ctx.fillRect(left + 6, top + 2, 2, height - 4);
       ctx.fillRect(left + width - 8, top + 2, 2, height - 4);
 
-      // Ổ khóa vàng ở chính giữa
       ctx.fillStyle = '#5d4037';
       ctx.fillRect(drawX - 4, top + 7, 8, 8);
       ctx.fillStyle = '#ffca28';
       ctx.fillRect(drawX - 3, top + 8, 6, 6);
     } else {
-      // Nắp rương mở bật ra phía sau
+      // Dự phòng rương mở
       ctx.fillStyle = '#241409';
       ctx.fillRect(left, top - 8, width, 11);
       ctx.fillStyle = '#a46831';
@@ -381,7 +392,6 @@ export class WeaponChest {
       ctx.fillStyle = '#ffd54f';
       ctx.fillRect(left + 2, top - 6, width - 4, 2);
 
-      // Hộp rương bên dưới khi đã mở
       ctx.fillStyle = '#241409';
       ctx.fillRect(left, top + 3, width, height - 3);
       ctx.fillStyle = '#3e2723';
