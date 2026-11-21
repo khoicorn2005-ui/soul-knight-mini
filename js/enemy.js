@@ -200,8 +200,9 @@ export class Enemy {
     if (this.type === 'melee') {
       const updatedDist = Math.hypot(player.x - this.x, player.y - this.y);
       if (updatedDist < this.radius + 12 && this.attackCooldown <= 0) {
-        player.triggerHitFlash?.();
-        this.attackCooldown = 0.8;
+        if (player.takeDamage?.(1)) {
+          this.attackCooldown = 0.8;
+        }
       }
     }
   }

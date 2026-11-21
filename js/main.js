@@ -20,7 +20,14 @@ enemyManager.spawnTestWave(map, player);
 // Phim test tam thoi o Chuong 5 de goi lai quai, se bo khi lam vong lap phong o Chuong 6
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyN' && !e.repeat) {
+    if (e.code === 'KeyN' && !e.repeat && player.hp > 0) {
+      enemyManager.spawnTestWave(map, player);
+    }
+    if (e.code === 'Enter' && !e.repeat && player.hp <= 0) {
+      player.resetStats();
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
+      bulletManager.clear();
       enemyManager.spawnTestWave(map, player);
     }
   });
@@ -53,10 +60,35 @@ function drawEnemyCounter(ctx, count) {
   ctx.restore();
 }
 
+function drawStatBar(ctx, x, y, width, height, ratio, fillColor, highlightColor, label) {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const fillWidth = Math.round((width - 2) * clamped);
+
+  ctx.fillStyle = '#101522';
+  ctx.fillRect(x, y, width, height);
+
+  if (fillWidth > 0) {
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(x + 1, y + 1, fillWidth, height - 2);
+    ctx.fillStyle = highlightColor;
+    ctx.fillRect(x + 1, y + 1, fillWidth, 3);
+  }
+
+  ctx.strokeStyle = '#394056';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f5f7fa';
+  ctx.fillText(label, x + width / 2, y + height / 2 + 0.5);
+}
+
 function drawHud(ctx, player) {
   const panelX = 10;
-  const panelWidth = 286;
-  const panelHeight = 54;
+  const panelWidth = 302;
+  const panelHeight = 72;
   const panelY = canvas.height - panelHeight - 10;
   const padding = 6;
   const margin = 30;
@@ -78,43 +110,88 @@ function drawHud(ctx, player) {
   ctx.lineWidth = 1;
   ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelWidth - 1, panelHeight - 1);
 
-  // Thanh Năng lượng màu xanh dương + chữ EN
+  // Cột trái: 3 thanh HP / SH / EN + thanh hồi chiêu Lướt
   const barX = panelX + padding;
   const barY = panelY + padding;
-  const barWidth = panelWidth - padding * 2;
-  const barHeight = 14;
-  const energyRatio = Math.max(0, Math.min(1, player.energy / player.maxEnergy));
+  const barWidth = 152;
+  const barHeight = 12;
+  const barGap = 4;
 
-  ctx.fillStyle = '#101522';
-  ctx.fillRect(barX, barY, barWidth, barHeight);
-  ctx.fillStyle = '#1e88e5';
-  ctx.fillRect(barX + 1, barY + 1, Math.round((barWidth - 2) * energyRatio), barHeight - 2);
-  ctx.fillStyle = '#42a5f5';
-  ctx.fillRect(barX + 1, barY + 1, Math.round((barWidth - 2) * energyRatio), 4);
-  ctx.strokeStyle = '#394056';
-  ctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
-
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#e3f2fd';
-  ctx.fillText(
-    `EN: ${player.energy} / ${player.maxEnergy}`,
-    barX + barWidth / 2,
-    barY + barHeight / 2 + 0.5,
+  drawStatBar(
+    ctx,
+    barX,
+    barY,
+    barWidth,
+    barHeight,
+    player.hp / player.maxHp,
+    '#d32f2f',
+    '#ef5350',
+    `HP: ${player.hp}/${player.maxHp}`,
   );
 
-  // 2 ô vũ khí gọn ngay bên dưới thanh Năng lượng
-  const slotY = barY + barHeight + padding;
-  const slotGap = 6;
-  const slotWidth = 134;
-  const slotHeight = 22;
+  const shieldColor = player.shieldRegenFlash > 0 ? '#b3e5fc' : '#64b5f6';
+  const shieldHighlight =
+    player.shieldRegenFlash > 0 ? '#ffffff' : '#90caf9';
+  const shieldSuffix =
+    player.shield < player.maxShield && player.shieldRegenDelay <= 0 ? ' +' : '';
+  drawStatBar(
+    ctx,
+    barX,
+    barY + (barHeight + barGap),
+    barWidth,
+    barHeight,
+    player.shield / player.maxShield,
+    shieldColor,
+    shieldHighlight,
+    `SH: ${player.shield}/${player.maxShield}${shieldSuffix}`,
+  );
+
+  drawStatBar(
+    ctx,
+    barX,
+    barY + (barHeight + barGap) * 2,
+    barWidth,
+    barHeight,
+    player.energy / player.maxEnergy,
+    '#0288d1',
+    '#29b6f6',
+    `EN: ${player.energy}/${player.maxEnergy}`,
+  );
+
+  const dashReady = player.dashCooldown <= 0;
+  const dashRatio = dashReady
+    ? 1
+    : 1 - player.dashCooldown / player.dashMaxCooldown;
+  const dashLabel = dashReady
+    ? 'DASH: Sẵn sàng'
+    : `DASH: ${player.dashCooldown.toFixed(1)}s`;
+  drawStatBar(
+    ctx,
+    barX,
+    barY + (barHeight + barGap) * 3,
+    barWidth,
+    barHeight,
+    dashRatio,
+    dashReady ? '#00897b' : '#546e7a',
+    dashReady ? '#4db6ac' : '#78909c',
+    dashLabel,
+  );
+
+  // Cột phải: 2 ô vũ khí xếp dọc gọn gàng ngay bên cạnh
+  const slotX = barX + barWidth + 8;
+  const slotWidth = panelWidth - padding * 2 - barWidth - 8;
+  const slotHeight = 28;
+  const slotGap = 4;
   const weapons = player.weaponSystem.weapons;
+
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
 
   for (let i = 0; i < weapons.length; i++) {
     const weapon = weapons[i];
     const isActive = i === player.weaponSystem.currentIndex;
-    const slotX = barX + i * (slotWidth + slotGap);
+    const slotY = barY + i * (slotHeight + slotGap);
 
     ctx.fillStyle = isActive ? '#2a2414' : '#161a28';
     ctx.fillRect(slotX, slotY, slotWidth, slotHeight);
@@ -124,8 +201,6 @@ function drawHud(ctx, player) {
     ctx.strokeRect(slotX + 0.5, slotY + 0.5, slotWidth - 1, slotHeight - 1);
 
     ctx.fillStyle = isActive ? '#fff8e1' : '#90a4ae';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     ctx.fillText(
       `${weapon.name} (${weapon.energyCost} EN)`,
       slotX + slotWidth / 2,
@@ -134,6 +209,24 @@ function drawHud(ctx, player) {
   }
 
   ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// Man hinh guc tam thoi o Chuong 5, se thay bang man hinh Game Over day du o Chuong 7
+function drawDownedOverlay(ctx) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.72)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const msg = 'HIỆP SĨ ĐÃ GỤC (Test Chương 5) - Nhấn ENTER để hồi sinh';
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = '#141824';
+  ctx.fillText(msg, canvas.width / 2 + 2, canvas.height / 2 + 2);
+  ctx.fillStyle = '#ff8a80';
+  ctx.fillText(msg, canvas.width / 2, canvas.height / 2);
   ctx.restore();
 }
 
@@ -147,12 +240,14 @@ function gameLoop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
-  player.update(dt, map, bulletManager);
-  const activeEnemies = enemyManager.getActiveEnemies();
-  aimSystem.update(player, activeEnemies);
-  player.aimAngle = aimSystem.aimAngle;
-  enemyManager.update(dt, map, player, bulletManager);
-  bulletManager.update(dt, map, activeEnemies, player);
+  if (player.hp > 0) {
+    player.update(dt, map, bulletManager);
+    const activeEnemies = enemyManager.getActiveEnemies();
+    aimSystem.update(player, activeEnemies);
+    player.aimAngle = aimSystem.aimAngle;
+    enemyManager.update(dt, map, player, bulletManager);
+    bulletManager.update(dt, map, activeEnemies, player);
+  }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   map.draw(ctx);
@@ -162,6 +257,10 @@ function gameLoop(timestamp) {
   aimSystem.draw(ctx, player);
   drawHud(ctx, player);
   drawEnemyCounter(ctx, enemyManager.getActiveEnemies().length);
+
+  if (player.hp <= 0) {
+    drawDownedOverlay(ctx);
+  }
 
   requestAnimationFrame(gameLoop);
 }

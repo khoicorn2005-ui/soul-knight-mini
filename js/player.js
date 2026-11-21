@@ -21,7 +21,7 @@ const ARROW_CODES = new Set([
 ]);
 
 /**
- * Đại diện cho nhân vật người chơi với cơ chế di chuyển 8 hướng, trượt tường và bắn vũ khí.
+ * Đại diện cho nhân vật người chơi với cơ chế di chuyển 8 hướng, trượt tường, giáp tự hồi và lướt né.
  */
 export class Player {
   #aimAngle = 0;
@@ -53,17 +53,28 @@ export class Player {
     this.aimAngle = 0;
     this.keys = new Set();
     this.isFiring = false;
+
+    // Bộ đếm sát thương, bất tử ngắn và tự hồi giáp sau 4 giây
     this.hitFlashTimer = 0;
+    this.invulnerableTimer = 0;
+    this.shieldRegenDelay = 0;
+    this.shieldRegenTick = 0;
+    this.shieldRegenFlash = 0;
+
+    // Kỹ năng Lướt (Dash - phím Space)
+    this.isDashing = false;
+    this.dashTimer = 0;
+    this.dashDuration = 0.18;
+    this.dashSpeed = 580;
+    this.dashCooldown = 0;
+    this.dashMaxCooldown = 1.5;
+    this.dashDirX = 0;
+    this.dashDirY = 0;
+    this.dashTrail = [];
+
     this.weaponSystem = new WeaponSystem();
 
     this.#bindInputEvents();
-  }
-
-  /**
-   * Kích hoạt nhấp nháy báo hiệu nhân vật vừa bị quái chạm hoặc trúng đạn.
-   */
-  triggerHitFlash() {
-    this.hitFlashTimer = 0.18;
   }
 
   /** @returns {number} */
@@ -81,7 +92,70 @@ export class Player {
   }
 
   /**
-   * Cập nhật vị trí nhân vật, trượt tường và xử lý bắn đạn khi đang giữ chuột trái.
+   * Kích hoạt nhấp nháy báo hiệu nhân vật vừa bị quái chạm hoặc trúng đạn.
+   */
+  triggerHitFlash() {
+    this.hitFlashTimer = 0.18;
+  }
+
+  /**
+   * Nhận sát thương chuẩn Soul Knight: trừ Giáp trước, phần dư trừ vào Máu.
+   * @param {number} [amount=1]
+   * @returns {boolean} True nếu sát thương được áp dụng.
+   */
+  takeDamage(amount = 1) {
+    if (
+      this.isDashing ||
+      this.invulnerableTimer > 0 ||
+      this.hp <= 0 ||
+      amount <= 0
+    ) {
+      return false;
+    }
+
+    if (this.shield >= amount) {
+      this.shield -= amount;
+    } else {
+      const overflow = amount - this.shield;
+      this.shield = 0;
+      this.hp = Math.max(0, this.hp - overflow);
+    }
+
+    this.invulnerableTimer = 0.6;
+    this.hitFlashTimer = 0.18;
+    this.shieldRegenDelay = 4.0;
+    this.shieldRegenTick = 0;
+    return true;
+  }
+
+  /**
+   * Khôi phục toàn bộ chỉ số và đặt lại các bộ đếm về trạng thái ban đầu.
+   */
+  resetStats() {
+    this.hp = this.maxHp;
+    this.shield = this.maxShield;
+    this.energy = this.maxEnergy;
+
+    this.hitFlashTimer = 0;
+    this.invulnerableTimer = 0;
+    this.shieldRegenDelay = 0;
+    this.shieldRegenTick = 0;
+    this.shieldRegenFlash = 0;
+
+    this.isDashing = false;
+    this.dashTimer = 0;
+    this.dashCooldown = 0;
+    this.dashDirX = 0;
+    this.dashDirY = 0;
+    this.dashTrail = [];
+
+    this.isFiring = false;
+    this.weaponSystem.cooldown = 0;
+    this.weaponSystem.outOfEnergyTimer = 0;
+  }
+
+  /**
+   * Cập nhật vị trí nhân vật, kỹ năng Lướt, tự hồi Giáp và bắn vũ khí.
    * @param {number} dt Thời gian trôi qua giữa hai khung hình (giây).
    * @param {import('./map.js').DungeonMap} map Bản đồ hiện tại.
    * @param {import('./bullet.js').BulletManager | null} [bulletManager=null]
@@ -92,40 +166,63 @@ export class Player {
     }
 
     this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+    this.invulnerableTimer = Math.max(0, this.invulnerableTimer - dt);
+    this.shieldRegenFlash = Math.max(0, this.shieldRegenFlash - dt);
+    this.dashCooldown = Math.max(0, this.dashCooldown - dt);
 
-    let dx = 0;
-    let dy = 0;
+    // Làm mờ dần và xóa các bóng mờ vệt lướt cũ
+    for (const ghost of this.dashTrail) {
+      ghost.alpha -= dt * 4.5;
+    }
+    this.dashTrail = this.dashTrail.filter((ghost) => ghost.alpha > 0);
 
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) {
-      dx -= 1;
-    }
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) {
-      dx += 1;
-    }
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
-      dy -= 1;
-    }
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
-      dy += 1;
+    if (this.hp <= 0) {
+      this.isDashing = false;
+      this.isFiring = false;
+      return;
     }
 
-    if (dx !== 0 || dy !== 0) {
-      // Chuẩn hóa vector khi đi chéo để tốc độ không vượt quá tốc độ đi thẳng
-      if (dx !== 0 && dy !== 0) {
-        const length = Math.hypot(dx, dy);
-        dx /= length;
-        dy /= length;
+    // Tự hồi Giáp: chờ 4.0s sau đòn đánh cuối, sau đó hồi +1 mỗi 1.0s
+    if (this.shield < this.maxShield) {
+      if (this.shieldRegenDelay > 0) {
+        this.shieldRegenDelay = Math.max(0, this.shieldRegenDelay - dt);
+      } else {
+        this.shieldRegenTick += dt;
+        while (this.shieldRegenTick >= 1.0 && this.shield < this.maxShield) {
+          this.shield = Math.min(this.maxShield, this.shield + 1);
+          this.shieldRegenTick -= 1.0;
+          this.shieldRegenFlash = 0.25;
+        }
+        if (this.shield >= this.maxShield) {
+          this.shieldRegenTick = 0;
+        }
       }
+    } else {
+      this.shieldRegenTick = 0;
+    }
 
-      const stepX = dx * this.speed * dt;
-      const stepY = dy * this.speed * dt;
+    if (this.isDashing) {
+      const dashDt = Math.min(dt, this.dashTimer);
+      this.dashTrail.push({
+        x: this.x,
+        y: this.y,
+        facingX: this.facingX,
+        alpha: 0.55,
+      });
 
-      if (stepX !== 0) {
-        this.#moveAxis('x', stepX, map);
+      this.#moveDash(
+        this.dashDirX * this.dashSpeed * dashDt,
+        this.dashDirY * this.dashSpeed * dashDt,
+        map,
+      );
+
+      this.dashTimer -= dt;
+      if (this.dashTimer <= 0) {
+        this.dashTimer = 0;
+        this.isDashing = false;
       }
-      if (stepY !== 0) {
-        this.#moveAxis('y', stepY, map);
-      }
+    } else {
+      this.#updateNormalMovement(dt, map);
     }
 
     this.weaponSystem.update(dt);
@@ -135,14 +232,29 @@ export class Player {
   }
 
   /**
-   * Vẽ nhân vật hiệp sĩ, khẩu súng đang cầm và cảnh báo hết năng lượng (nếu có).
+   * Vẽ vệt lướt, nhân vật hiệp sĩ, súng và các hiệu ứng trạng thái (bất tử, hồi giáp).
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
+    this.#drawDashTrail(ctx);
+
     const drawX = Math.round(this.x);
     const drawY = Math.round(this.y);
     const left = drawX - Math.floor(this.width / 2);
     const top = drawY - Math.floor(this.height / 2);
+
+    ctx.save();
+
+    if (this.isDashing) {
+      // Hơi sáng rực và bán trong suốt nhẹ để báo trạng thái bất tử khi lướt
+      ctx.globalAlpha = 0.78;
+    } else if (
+      this.invulnerableTimer > 0 &&
+      this.hitFlashTimer <= 0 &&
+      Math.floor(this.invulnerableTimer * 18) % 2 === 0
+    ) {
+      ctx.globalAlpha = 0.45;
+    }
 
     // Bóng tròn mờ dưới chân nhân vật
     ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
@@ -152,14 +264,14 @@ export class Player {
 
     // Dải mũ đỏ nhỏ trên đỉnh mũ hiệp sĩ xoay nhẹ theo hướng nhìn
     const crestX = this.facingX > 0 ? left + 5 : left + 9;
-    ctx.fillStyle = '#ff5252';
+    ctx.fillStyle = this.isDashing ? '#80d8ff' : '#ff5252';
     ctx.fillRect(crestX, top - 2, 8, 3);
 
     // Viền đậm bao quanh thân hiệp sĩ
     ctx.fillStyle = this.hitFlashTimer > 0 ? '#7f1d1d' : '#142433';
     ctx.fillRect(left, top, this.width, this.height);
 
-    // Thân giáp (nhấp nháy trắng/đỏ nhạt khi vừa trúng đòn)
+    // Thân giáp (nhấp nháy khi trúng đòn hoặc sáng rực khi đang lướt)
     if (this.hitFlashTimer > 0) {
       ctx.fillStyle = this.hitFlashTimer > 0.09 ? '#ffffff' : '#ffcdd2';
       ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
@@ -167,13 +279,18 @@ export class Player {
       ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
       ctx.fillStyle = '#ff8a80';
       ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+    } else if (this.isDashing) {
+      ctx.fillStyle = '#80d8ff';
+      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+      ctx.fillStyle = '#e1f5fe';
+      ctx.fillRect(left + 3, top + 2, this.width - 6, 4);
+      ctx.fillStyle = '#29b6f6';
+      ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
     } else {
       ctx.fillStyle = '#4fc3f7';
       ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
       ctx.fillStyle = '#b3e5fc';
       ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
-
-      // Phần giáp dưới / chân đậm hơn
       ctx.fillStyle = '#2980b9';
       ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
     }
@@ -190,9 +307,48 @@ export class Player {
 
     this.#drawWeapon(ctx, drawX, drawY);
 
+    ctx.restore();
+
+    if (this.shieldRegenFlash > 0) {
+      this.#drawShieldRegenRing(ctx, drawX, drawY);
+    }
+
     if (this.weaponSystem.outOfEnergyTimer > 0) {
       this.#drawOutOfEnergyWarning(ctx, drawX, top);
     }
+  }
+
+  #drawDashTrail(ctx) {
+    if (this.dashTrail.length === 0) {
+      return;
+    }
+
+    ctx.save();
+    for (const ghost of this.dashTrail) {
+      const gx = Math.round(ghost.x);
+      const gy = Math.round(ghost.y);
+      const gLeft = gx - Math.floor(this.width / 2);
+      const gTop = gy - Math.floor(this.height / 2);
+
+      ctx.globalAlpha = Math.max(0, ghost.alpha);
+      ctx.fillStyle = '#4fc3f7';
+      ctx.fillRect(gLeft + 1, gTop + 1, this.width - 2, this.height - 2);
+      ctx.fillStyle = '#b3e5fc';
+      ctx.fillRect(gLeft + 3, gTop + 2, this.width - 6, 4);
+    }
+    ctx.restore();
+  }
+
+  #drawShieldRegenRing(ctx, drawX, drawY) {
+    const progress = 1 - this.shieldRegenFlash / 0.25;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, this.shieldRegenFlash / 0.25);
+    ctx.strokeStyle = '#81d4fa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(drawX, drawY, 15 + progress * 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   #drawWeapon(ctx, drawX, drawY) {
@@ -263,11 +419,22 @@ export class Player {
         if (MOVEMENT_CODES.has(e.code)) {
           this.keys.add(e.code);
         }
-        if (e.code === 'KeyQ' && !e.repeat) {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (
+            !e.repeat &&
+            !this.isDashing &&
+            this.dashCooldown <= 0 &&
+            this.hp > 0
+          ) {
+            this.#startDash();
+          }
+        }
+        if (e.code === 'KeyQ' && !e.repeat && this.hp > 0) {
           this.weaponSystem.switchWeapon();
         }
         // Phim test tam thoi o Chuong 4 de hoi nang luong, se bo khi co ngoc nang luong o Chuong 6
-        if (e.code === 'KeyR' && !e.repeat) {
+        if (e.code === 'KeyR' && !e.repeat && this.hp > 0) {
           this.energy = this.maxEnergy;
         }
       });
@@ -291,7 +458,7 @@ export class Player {
 
     if (this.canvas && typeof this.canvas.addEventListener === 'function') {
       this.canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0) {
+        if (e.button === 0 && this.hp > 0) {
           this.isFiring = true;
         }
       });
@@ -306,10 +473,105 @@ export class Player {
         'wheel',
         (e) => {
           e.preventDefault();
-          this.weaponSystem.switchWeapon();
+          if (this.hp > 0) {
+            this.weaponSystem.switchWeapon();
+          }
         },
         { passive: false },
       );
+    }
+  }
+
+  #startDash() {
+    let dirX = 0;
+    let dirY = 0;
+
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) {
+      dirX -= 1;
+    }
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) {
+      dirX += 1;
+    }
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
+      dirY -= 1;
+    }
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
+      dirY += 1;
+    }
+
+    if (dirX !== 0 || dirY !== 0) {
+      const length = Math.hypot(dirX, dirY);
+      this.dashDirX = dirX / length;
+      this.dashDirY = dirY / length;
+    } else {
+      this.dashDirX = Math.cos(this.#aimAngle);
+      this.dashDirY = Math.sin(this.#aimAngle);
+    }
+
+    this.isDashing = true;
+    this.dashTimer = this.dashDuration;
+    this.dashCooldown = this.dashMaxCooldown;
+    this.dashTrail.push({
+      x: this.x,
+      y: this.y,
+      facingX: this.facingX,
+      alpha: 0.55,
+    });
+  }
+
+  #updateNormalMovement(dt, map) {
+    let dx = 0;
+    let dy = 0;
+
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) {
+      dx -= 1;
+    }
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) {
+      dx += 1;
+    }
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
+      dy -= 1;
+    }
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) {
+      dy += 1;
+    }
+
+    if (dx === 0 && dy === 0) {
+      return;
+    }
+
+    // Chuẩn hóa vector khi đi chéo để tốc độ không vượt quá tốc độ đi thẳng
+    if (dx !== 0 && dy !== 0) {
+      const length = Math.hypot(dx, dy);
+      dx /= length;
+      dy /= length;
+    }
+
+    const stepX = dx * this.speed * dt;
+    const stepY = dy * this.speed * dt;
+
+    if (stepX !== 0) {
+      this.#moveAxis('x', stepX, map);
+    }
+    if (stepY !== 0) {
+      this.#moveAxis('y', stepY, map);
+    }
+  }
+
+  #moveDash(totalDx, totalDy, map) {
+    // Chia nhỏ bước lướt (tối đa 10px mỗi bước) để tuyệt đối không xuyên tường/cột đá
+    const distance = Math.hypot(totalDx, totalDy);
+    const steps = Math.max(1, Math.ceil(distance / 10));
+    const stepX = totalDx / steps;
+    const stepY = totalDy / steps;
+
+    for (let i = 0; i < steps; i++) {
+      if (stepX !== 0) {
+        this.#moveAxis('x', stepX, map);
+      }
+      if (stepY !== 0) {
+        this.#moveAxis('y', stepY, map);
+      }
     }
   }
 

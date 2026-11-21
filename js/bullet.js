@@ -96,8 +96,15 @@ export class Bullet {
         Math.min(player.width ?? 22, player.height ?? 22) / 2;
       const dist = Math.hypot(player.x - this.x, player.y - this.y);
       if (dist < this.radius + playerRadius) {
+        if (player.isDashing) {
+          return null;
+        }
         this.active = false;
-        player.triggerHitFlash?.();
+        if (typeof player.takeDamage === 'function') {
+          player.takeDamage(this.damage);
+        } else {
+          player.triggerHitFlash?.();
+        }
         return { x: this.x, y: this.y, color: '#ff3b3b', isTargetHit: true };
       }
     }
@@ -111,6 +118,14 @@ export class Bullet {
  */
 export class BulletManager {
   constructor() {
+    this.bullets = [];
+    this.impacts = [];
+  }
+
+  /**
+   * Xóa sạch toàn bộ đạn và tia lửa hiện có trên sân.
+   */
+  clear() {
     this.bullets = [];
     this.impacts = [];
   }
