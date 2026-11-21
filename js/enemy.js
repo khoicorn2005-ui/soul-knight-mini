@@ -1,5 +1,7 @@
 // Quản lý kẻ địch thường, Boss, hành vi chiến đấu và vật phẩm rơi ra.
 
+import { assets } from './assets.js';
+
 const ENEMY_CONFIG = Object.freeze({
   melee: Object.freeze({
     maxHp: 14,
@@ -75,6 +77,13 @@ export class Enemy {
     this.aimAngle = 0;
     this.chargeRatio = 0;
     this.deathNotified = false;
+
+    // Hoạt ảnh Pixel Art lệch pha ngẫu nhiên giữa các quái
+    this.animTimer = Math.random() * 0.5;
+    this.animFrame = Math.floor(Math.random() * 4);
+    this.facingX = 1;
+    this.isMoving = false;
+
     this.#onDeath = onDeath;
   }
 
@@ -125,12 +134,15 @@ export class Enemy {
     this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
     this.attackCooldown = Math.max(0, this.attackCooldown - dt);
 
+    const prevX = this.x;
+    const prevY = this.y;
     const dx = player.x - this.x;
     const dy = player.y - this.y;
     const dist = Math.hypot(dx, dy);
 
     if (dist > 0.0001) {
       this.aimAngle = Math.atan2(dy, dx);
+      this.facingX = dx >= 0 ? 1 : -1;
     }
 
     let vx = 0;
@@ -157,10 +169,10 @@ export class Enemy {
       }
 
       if (dist <= 380) {
-        // Nháy sáng nhẹ ở đầu trượng trong 0.45s cuối trước khi bắn
+        // Nháy đốm sáng năng lượng trong 0.35s cuối trước khi bắn
         this.chargeRatio =
-          this.attackCooldown <= 0.45
-            ? Math.min(1, Math.max(0, 1 - this.attackCooldown / 0.45))
+          this.attackCooldown <= 0.35
+            ? Math.min(1, Math.max(0, 1 - this.attackCooldown / 0.35))
             : 0;
 
         if (this.attackCooldown <= 0 && bulletManager) {
@@ -197,6 +209,14 @@ export class Enemy {
       this.#moveAxis('y', stepY, map);
     }
 
+    this.isMoving = Math.hypot(this.x - prevX, this.y - prevY) > 0.25;
+    const frameDuration = this.isMoving ? 0.11 : 0.17;
+    this.animTimer += dt;
+    while (this.animTimer >= frameDuration) {
+      this.animTimer -= frameDuration;
+      this.animFrame = (this.animFrame + 1) % 4;
+    }
+
     // Kiểm tra đòn cận chiến sau khi đã cập nhật vị trí trượt tường
     if (this.type === 'melee') {
       const updatedDist = Math.hypot(player.x - this.x, player.y - this.y);
@@ -209,7 +229,7 @@ export class Enemy {
   }
 
   /**
-   * Vẽ quái cận chiến/đánh xa và thanh máu nhỏ phía trên đầu (khi hp < maxHp).
+   * Vẽ quái cận chiến/đánh xa bằng sprite hoạt ảnh Pixel Art và thanh máu nhỏ phía trên đầu.
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
@@ -221,24 +241,66 @@ export class Enemy {
     const drawY = Math.round(this.y);
     const left = drawX - Math.floor(this.width / 2);
     const top = drawY - Math.floor(this.height / 2);
+    const feetY = this.y + this.height / 2 + 3;
     const isFlashing = this.hitFlashTimer > 0;
 
     ctx.save();
 
     // Bóng tròn mờ dưới chân quái
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.40)';
     ctx.beginPath();
-    ctx.ellipse(drawX, top + this.height, 9, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(drawX, this.y + this.height / 2 + 2, 11, 4.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    if (this.type === 'melee') {
-      this.#drawMeleeBody(ctx, drawX, drawY, left, top, isFlashing);
-    } else {
-      this.#drawRangedBody(ctx, drawX, drawY, left, top, isFlashing);
-    }
+    const prefix =
+      this.type === 'ranged'
+        ? this.isMoving
+          ? 'ranged_run'
+          : 'ranged_idle'
+        : this.isMoving
+          ? 'melee_run'
+          : 'melee_idle';
+    const frameImg = assets.getAnimFrame(prefix, this.animFrame);
 
-    if (this.hp < this.maxHp && this.hp > 0) {
-      this.#drawHealthBar(ctx, drawX, top);
+    if (frameImg) {
+      assets.drawSprite(ctx, frameImg, this.x, feetY, 2, {
+        flipX: this.facingX < 0,
+        flashWhite: isFlashing,
+      });
+
+      // Đốm sáng năng lượng tím-đỏ lóe lên phía hướng về player ~0.35s trước khi quái đánh xa bắn
+      if (this.type === 'ranged' && this.chargeRatio > 0) {
+        const orbX = this.x + Math.cos(this.aimAngle) * 14;
+        const orbY = this.y + Math.sin(this.aimAngle) * 14;
+
+        ctx.fillStyle =
+          this.chargeRatio > 0.55
+            ? 'rgba(255, 82, 82, 0.85)'
+            : 'rgba(224, 64, 251, 0.72)';
+        ctx.beginPath();
+        ctx.arc(orbX, orbY, 3.5 + this.chargeRatio * 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = this.chargeRatio > 0.45 ? '#ffffff' : '#ff80ab';
+        ctx.beginPath();
+        ctx.arc(orbX, orbY, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (this.hp < this.maxHp && this.hp > 0) {
+        const spriteHeadTop = Math.round(feetY - 40);
+        this.#drawHealthBar(ctx, drawX, spriteHeadTop);
+      }
+    } else {
+      if (this.type === 'melee') {
+        this.#drawMeleeBody(ctx, drawX, drawY, left, top, isFlashing);
+      } else {
+        this.#drawRangedBody(ctx, drawX, drawY, left, top, isFlashing);
+      }
+
+      if (this.hp < this.maxHp && this.hp > 0) {
+        this.#drawHealthBar(ctx, drawX, top);
+      }
     }
 
     ctx.restore();

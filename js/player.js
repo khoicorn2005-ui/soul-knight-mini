@@ -1,6 +1,7 @@
 // Quản lý nhân vật người chơi: di chuyển 8 hướng, lướt né (dash), HP, giáp (shield) và năng lượng.
 
-import { WeaponSystem } from './weapon.js';
+import { WeaponSystem, drawPixelWeapon } from './weapon.js';
+import { assets } from './assets.js';
 
 const MOVEMENT_CODES = new Set([
   'KeyW',
@@ -71,6 +72,11 @@ export class Player {
     this.dashDirX = 0;
     this.dashDirY = 0;
     this.dashTrail = [];
+
+    // Hoạt ảnh Pixel Art (idle / run 4 khung hình)
+    this.animTimer = 0;
+    this.animFrame = 0;
+    this.isMoving = false;
 
     this.inputEnabled = true;
     this.weaponSystem = new WeaponSystem();
@@ -162,6 +168,9 @@ export class Player {
     this.dashTrail = [];
 
     this.isFiring = false;
+    this.animTimer = 0;
+    this.animFrame = 0;
+    this.isMoving = false;
     this.weaponSystem.cooldown = 0;
     this.weaponSystem.outOfEnergyTimer = 0;
   }
@@ -226,8 +235,10 @@ export class Player {
       this.dashTrail.push({
         x: this.x,
         y: this.y,
-        facingX: this.facingX,
-        alpha: 0.55,
+        flipX: this.facingX < 0,
+        animFrame: this.animFrame,
+        isMoving: true,
+        alpha: 0.65,
       });
 
       this.#moveDash(
@@ -236,13 +247,21 @@ export class Player {
         map,
       );
 
+      this.isMoving = true;
       this.dashTimer -= dt;
       if (this.dashTimer <= 0) {
         this.dashTimer = 0;
         this.isDashing = false;
       }
     } else {
-      this.#updateNormalMovement(dt, map);
+      this.isMoving = this.#updateNormalMovement(dt, map);
+    }
+
+    const frameDuration = this.isMoving ? 0.085 : 0.14;
+    this.animTimer += dt;
+    while (this.animTimer >= frameDuration) {
+      this.animTimer -= frameDuration;
+      this.animFrame = (this.animFrame + 1) % 4;
     }
 
     this.weaponSystem.update(dt);
@@ -252,7 +271,7 @@ export class Player {
   }
 
   /**
-   * Vẽ vệt lướt, nhân vật hiệp sĩ, súng và các hiệu ứng trạng thái (bất tử, hồi giáp).
+   * Vẽ vệt lướt, bóng chân, hoạt ảnh Hiệp sĩ, vũ khí xoay theo hướng ngắm và hiệu ứng trạng thái.
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
@@ -262,69 +281,81 @@ export class Player {
     const drawY = Math.round(this.y);
     const left = drawX - Math.floor(this.width / 2);
     const top = drawY - Math.floor(this.height / 2);
+    const feetY = this.y + this.height / 2 + 3;
 
-    ctx.save();
-
+    let alpha = 1;
     if (this.isDashing) {
       // Hơi sáng rực và bán trong suốt nhẹ để báo trạng thái bất tử khi lướt
-      ctx.globalAlpha = 0.78;
+      alpha = 0.85;
     } else if (
       this.invulnerableTimer > 0 &&
       this.hitFlashTimer <= 0 &&
       Math.floor(this.invulnerableTimer * 18) % 2 === 0
     ) {
-      ctx.globalAlpha = 0.45;
+      alpha = 0.45;
     }
 
-    // Bóng tròn mờ dưới chân nhân vật
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+    ctx.save();
+
+    // Bóng tròn tối bán trong suốt ngay dưới chân nhân vật
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
     ctx.beginPath();
-    ctx.ellipse(drawX, top + this.height, 9, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(drawX, this.y + this.height / 2 + 2, 11, 4.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Dải mũ đỏ nhỏ trên đỉnh mũ hiệp sĩ xoay nhẹ theo hướng nhìn
-    const crestX = this.facingX > 0 ? left + 5 : left + 9;
-    ctx.fillStyle = this.isDashing ? '#80d8ff' : '#ff5252';
-    ctx.fillRect(crestX, top - 2, 8, 3);
+    const framePrefix = this.isMoving ? 'knight_run' : 'knight_idle';
+    const frameImg = assets.getAnimFrame(framePrefix, this.animFrame);
 
-    // Viền đậm bao quanh thân hiệp sĩ
-    ctx.fillStyle = this.hitFlashTimer > 0 ? '#7f1d1d' : '#142433';
-    ctx.fillRect(left, top, this.width, this.height);
-
-    // Thân giáp (nhấp nháy khi trúng đòn hoặc sáng rực khi đang lướt)
-    if (this.hitFlashTimer > 0) {
-      ctx.fillStyle = this.hitFlashTimer > 0.09 ? '#ffffff' : '#ffcdd2';
-      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
-      ctx.fillStyle = '#ff8a80';
-      ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
-    } else if (this.isDashing) {
-      ctx.fillStyle = '#80d8ff';
-      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
-      ctx.fillStyle = '#e1f5fe';
-      ctx.fillRect(left + 3, top + 2, this.width - 6, 4);
-      ctx.fillStyle = '#29b6f6';
-      ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+    if (frameImg) {
+      assets.drawSprite(ctx, frameImg, this.x, feetY, 2, {
+        flipX: this.facingX < 0,
+        alpha,
+        flashWhite: this.hitFlashTimer > 0,
+      });
     } else {
-      ctx.fillStyle = '#4fc3f7';
-      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
-      ctx.fillStyle = '#b3e5fc';
-      ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
-      ctx.fillStyle = '#2980b9';
-      ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+      // Dự phòng hình khối cũ nếu chưa có sprite
+      ctx.globalAlpha = alpha;
+      const crestX = this.facingX > 0 ? left + 5 : left + 9;
+      ctx.fillStyle = this.isDashing ? '#80d8ff' : '#ff5252';
+      ctx.fillRect(crestX, top - 2, 8, 3);
+
+      ctx.fillStyle = this.hitFlashTimer > 0 ? '#7f1d1d' : '#142433';
+      ctx.fillRect(left, top, this.width, this.height);
+
+      if (this.hitFlashTimer > 0) {
+        ctx.fillStyle = this.hitFlashTimer > 0.09 ? '#ffffff' : '#ffcdd2';
+        ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
+        ctx.fillStyle = '#ff8a80';
+        ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+      } else if (this.isDashing) {
+        ctx.fillStyle = '#80d8ff';
+        ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+        ctx.fillStyle = '#e1f5fe';
+        ctx.fillRect(left + 3, top + 2, this.width - 6, 4);
+        ctx.fillStyle = '#29b6f6';
+        ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+      } else {
+        ctx.fillStyle = '#4fc3f7';
+        ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+        ctx.fillStyle = '#b3e5fc';
+        ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
+        ctx.fillStyle = '#2980b9';
+        ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+      }
+
+      const visorX = this.facingX > 0 ? left + 7 : left + 3;
+      ctx.fillStyle = '#1a2634';
+      ctx.fillRect(visorX, top + 6, 12, 6);
+
+      const eyeOffset = this.facingX > 0 ? 2 : 0;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(visorX + 2 + eyeOffset, top + 8, 2, 3);
+      ctx.fillRect(visorX + 6 + eyeOffset, top + 8, 2, 3);
     }
 
-    // Khe mũ và cặp mắt xoay theo hướng facingX
-    const visorX = this.facingX > 0 ? left + 7 : left + 3;
-    ctx.fillStyle = '#1a2634';
-    ctx.fillRect(visorX, top + 6, 12, 6);
-
-    const eyeOffset = this.facingX > 0 ? 2 : 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(visorX + 2 + eyeOffset, top + 8, 2, 3);
-    ctx.fillRect(visorX + 6 + eyeOffset, top + 8, 2, 3);
-
+    ctx.globalAlpha = alpha;
     this.#drawWeapon(ctx, drawX, drawY);
 
     ctx.restore();
@@ -334,7 +365,7 @@ export class Player {
     }
 
     if (this.weaponSystem.outOfEnergyTimer > 0) {
-      this.#drawOutOfEnergyWarning(ctx, drawX, top);
+      this.#drawOutOfEnergyWarning(ctx, drawX, frameImg ? drawY - 26 : top);
     }
   }
 
@@ -343,20 +374,38 @@ export class Player {
       return;
     }
 
-    ctx.save();
     for (const ghost of this.dashTrail) {
-      const gx = Math.round(ghost.x);
-      const gy = Math.round(ghost.y);
-      const gLeft = gx - Math.floor(this.width / 2);
-      const gTop = gy - Math.floor(this.height / 2);
+      const ghostPrefix = ghost.isMoving ? 'knight_run' : 'knight_idle';
+      const ghostImg = assets.getAnimFrame(ghostPrefix, ghost.animFrame ?? 0);
 
-      ctx.globalAlpha = Math.max(0, ghost.alpha);
-      ctx.fillStyle = '#4fc3f7';
-      ctx.fillRect(gLeft + 1, gTop + 1, this.width - 2, this.height - 2);
-      ctx.fillStyle = '#b3e5fc';
-      ctx.fillRect(gLeft + 3, gTop + 2, this.width - 6, 4);
+      if (ghostImg) {
+        assets.drawSprite(
+          ctx,
+          ghostImg,
+          ghost.x,
+          ghost.y + this.height / 2 + 3,
+          2,
+          {
+            flipX: Boolean(ghost.flipX),
+            alpha: Math.max(0, ghost.alpha),
+            tintColor: '#4dd0e1',
+          },
+        );
+      } else {
+        const gx = Math.round(ghost.x);
+        const gy = Math.round(ghost.y);
+        const gLeft = gx - Math.floor(this.width / 2);
+        const gTop = gy - Math.floor(this.height / 2);
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, ghost.alpha);
+        ctx.fillStyle = '#4fc3f7';
+        ctx.fillRect(gLeft + 1, gTop + 1, this.width - 2, this.height - 2);
+        ctx.fillStyle = '#b3e5fc';
+        ctx.fillRect(gLeft + 3, gTop + 2, this.width - 6, 4);
+        ctx.restore();
+      }
     }
-    ctx.restore();
   }
 
   #drawShieldRegenRing(ctx, drawX, drawY) {
@@ -373,89 +422,17 @@ export class Player {
 
   #drawWeapon(ctx, drawX, drawY) {
     const weapon = this.weaponSystem.getCurrentWeapon();
-    const recoilOffset = this.weaponSystem.recoilTimer > 0 ? -2 : 0;
-    const switchOffset = this.weaponSystem.switchFlashTimer > 0 ? -2 : 0;
+    const handX = drawX + Math.cos(this.#aimAngle) * 3;
+    const handY = drawY + 4 + Math.sin(this.#aimAngle) * 2;
 
     ctx.save();
-    ctx.translate(drawX, drawY + 2 + switchOffset);
+    ctx.translate(handX, handY);
     ctx.rotate(this.#aimAngle);
     if (Math.cos(this.#aimAngle) < 0) {
       ctx.scale(1, -1);
     }
 
-    if (weapon.id === 'shotgun') {
-      // Báng gỗ nâu đậm và thân Shotgun dài
-      ctx.fillStyle = '#141824';
-      ctx.fillRect(recoilOffset + 1, -4, weapon.barrelLength + 1, 7);
-
-      ctx.fillStyle = weapon.bodyColor;
-      ctx.fillRect(recoilOffset + 2, -2, 8, 4);
-      ctx.fillStyle = '#a1887f';
-      ctx.fillRect(recoilOffset + 2, -2, 7, 1);
-
-      // Nòng thép dài và ốp tay bơm
-      ctx.fillStyle = '#455a64';
-      ctx.fillRect(recoilOffset + 8, -3, weapon.barrelLength - 8, 4);
-      ctx.fillStyle = '#90a4ae';
-      ctx.fillRect(recoilOffset + 9, -3, weapon.barrelLength - 10, 1);
-      ctx.fillStyle = '#6d4c41';
-      ctx.fillRect(recoilOffset + 11, 1, 7, 2);
-    } else if (weapon.id === 'smg') {
-      // Tiểu Liên nhỏ gọn màu xám thép kèm băng đạn dọc và đầu nòng cyan
-      ctx.fillStyle = '#141824';
-      ctx.fillRect(recoilOffset + 2, -4, weapon.barrelLength, 6);
-      ctx.fillRect(recoilOffset + 9, 1, 4, 6);
-
-      ctx.fillStyle = weapon.bodyColor;
-      ctx.fillRect(recoilOffset + 3, -3, weapon.barrelLength - 3, 4);
-      ctx.fillStyle = '#90a4ae';
-      ctx.fillRect(recoilOffset + 4, -3, weapon.barrelLength - 6, 1);
-      ctx.fillStyle = '#37474f';
-      ctx.fillRect(recoilOffset + 10, 1, 2, 5);
-      ctx.fillStyle = weapon.bulletColor;
-      ctx.fillRect(recoilOffset + weapon.barrelLength - 2, -2, 2, 2);
-    } else if (weapon.id === 'staff') {
-      // Pháp Trượng tím có vòng vàng và viên ngọc ma thuật ở đầu nòng
-      const shaftLength = Math.max(12, weapon.barrelLength - 4);
-      ctx.fillStyle = '#141824';
-      ctx.fillRect(recoilOffset + 1, -3, shaftLength + 1, 5);
-
-      ctx.fillStyle = weapon.bodyColor;
-      ctx.fillRect(recoilOffset + 2, -2, shaftLength - 2, 3);
-      ctx.fillStyle = '#ce93d8';
-      ctx.fillRect(recoilOffset + 2, -2, shaftLength - 3, 1);
-
-      ctx.fillStyle = '#ffd54f';
-      ctx.fillRect(recoilOffset + shaftLength - 3, -3, 3, 5);
-
-      const orbX = recoilOffset + weapon.barrelLength - 1;
-      ctx.fillStyle = '#141824';
-      ctx.beginPath();
-      ctx.arc(orbX, -0.5, 4.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = weapon.bulletColor;
-      ctx.beginPath();
-      ctx.arc(orbX, -0.5, 3.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(orbX - 0.5, -1, 1.4, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // Tay cầm và thân vũ khí mặc định theo bodyColor & barrelLength
-      ctx.fillStyle = '#4e342e';
-      ctx.fillRect(recoilOffset + 4, 1, 4, 5);
-
-      ctx.fillStyle = '#141824';
-      ctx.fillRect(recoilOffset + 3, -4, weapon.barrelLength - 2, 6);
-      ctx.fillStyle = weapon.bodyColor;
-      ctx.fillRect(recoilOffset + 4, -3, weapon.barrelLength - 4, 4);
-      ctx.fillStyle = '#eceff1';
-      ctx.fillRect(recoilOffset + 4, -3, weapon.barrelLength - 4, 1);
-      ctx.fillStyle = '#546e7a';
-      ctx.fillRect(recoilOffset + 4, 0, weapon.barrelLength - 6, 1);
-    }
-
+    drawPixelWeapon(ctx, weapon, assets);
     ctx.restore();
   }
 
@@ -574,8 +551,10 @@ export class Player {
     this.dashTrail.push({
       x: this.x,
       y: this.y,
-      facingX: this.facingX,
-      alpha: 0.55,
+      flipX: this.facingX < 0,
+      animFrame: this.animFrame,
+      isMoving: true,
+      alpha: 0.65,
     });
   }
 
@@ -597,7 +576,7 @@ export class Player {
     }
 
     if (dx === 0 && dy === 0) {
-      return;
+      return false;
     }
 
     // Chuẩn hóa vector khi đi chéo để tốc độ không vượt quá tốc độ đi thẳng
@@ -616,6 +595,7 @@ export class Player {
     if (stepY !== 0) {
       this.#moveAxis('y', stepY, map);
     }
+    return true;
   }
 
   #moveDash(totalDx, totalDy, map) {

@@ -387,3 +387,142 @@ export class WeaponSystem {
     return true;
   }
 }
+
+/**
+ * Vẽ 4 khẩu súng theo phong cách Pixel Art (hạt 2px, viền tối #141622) nằm ngang hướng +X từ gốc tay cầm (0, 0).
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} weapon
+ * @param {import('./assets.js').AssetManager | null} [assets=null]
+ */
+export function drawPixelWeapon(ctx, weapon, assets = null) {
+  if (!ctx || !weapon) {
+    return;
+  }
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  if (weapon.id === 'shotgun') {
+    // Shotgun: báng gỗ nâu ấm + thân máy + nòng dài thép tối + ốp tay bơm
+    // Viền tối #141622
+    ctx.fillStyle = '#141622';
+    ctx.fillRect(-4, -2, 8, 8);
+    ctx.fillRect(2, -6, 22, 8);
+    ctx.fillRect(10, 2, 10, 4);
+
+    // Báng gỗ nâu ấm có mảng sáng tối
+    ctx.fillStyle = '#6d4c41';
+    ctx.fillRect(-2, 0, 6, 4);
+    ctx.fillStyle = '#a1887f';
+    ctx.fillRect(-2, 0, 5, 2);
+
+    // Thân súng & nòng thép dài
+    ctx.fillStyle = '#455a64';
+    ctx.fillRect(4, -4, 18, 4);
+    ctx.fillStyle = '#90a4ae';
+    ctx.fillRect(6, -4, 16, 2);
+    ctx.fillStyle = '#263238';
+    ctx.fillRect(6, -2, 4, 2);
+
+    // Ốp lót tay bơm bằng gỗ nâu
+    ctx.fillStyle = '#8d6e63';
+    ctx.fillRect(12, 0, 6, 4);
+    ctx.fillStyle = '#bcaaa4';
+    ctx.fillRect(12, 0, 6, 2);
+  } else if (weapon.id === 'smg') {
+    // Tiểu Liên: thân vuông gọn xanh xám quân đội + băng đạn dọc nhô xuống + đầu nòng ngắn
+    ctx.fillStyle = '#141622';
+    ctx.fillRect(-2, -6, 18, 10);
+    ctx.fillRect(0, 2, 6, 6);
+    ctx.fillRect(8, 2, 6, 8);
+    ctx.fillRect(16, -4, 6, 6);
+
+    // Tay cầm & băng đạn dọc nhô xuống
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(2, 2, 2, 4);
+    ctx.fillStyle = '#263238';
+    ctx.fillRect(10, 2, 2, 6);
+
+    // Thân chính vuông gọn xanh xám quân đội
+    ctx.fillStyle = '#546e7a';
+    ctx.fillRect(0, -4, 14, 6);
+    ctx.fillStyle = '#90a4ae';
+    ctx.fillRect(0, -4, 12, 2);
+
+    // Đầu nòng ngắn + điểm sáng cyan
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(14, -2, 6, 2);
+    ctx.fillStyle = '#4dd0e1';
+    ctx.fillRect(18, -2, 2, 2);
+  } else if (weapon.id === 'staff') {
+    const staffImg = assets?.get?.('weapon_staff');
+    if (staffImg) {
+      const imgW = staffImg.naturalWidth || staffImg.width || 8;
+      const imgH = staffImg.naturalHeight || staffImg.height || 30;
+      const scale = 1.4;
+      const drawW = Math.round(imgW * scale);
+      const drawH = Math.round(imgH * scale);
+
+      // Ảnh gốc dựng đứng (đỉnh hướng -Y), xoay +90 độ để hướng ngang +X từ gốc cầm tay
+      ctx.save();
+      ctx.translate(10, 0);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(
+        staffImg,
+        -Math.round(drawW / 2),
+        -Math.round(drawH * 0.65),
+        drawW,
+        drawH,
+      );
+      ctx.restore();
+
+      // Ánh pha lê tím nhẹ hòa hợp màu đạn Pháp Trượng
+      ctx.fillStyle = 'rgba(224, 64, 251, 0.35)';
+      ctx.fillRect(22, -4, 6, 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(24, -2, 2, 2);
+    } else {
+      // Trượng gỗ tím gắn viên pha lê #e040fb lõi trắng lấp lánh
+      ctx.fillStyle = '#141622';
+      ctx.fillRect(-4, -3, 22, 6);
+      ctx.fillRect(16, -6, 10, 12);
+
+      // Thân trượng gỗ tím + vòng cổ vàng
+      ctx.fillStyle = '#6a1b9a';
+      ctx.fillRect(-2, -1, 18, 2);
+      ctx.fillStyle = '#ce93d8';
+      ctx.fillRect(-2, -1, 14, 1);
+      ctx.fillStyle = '#ffd54f';
+      ctx.fillRect(14, -2, 2, 4);
+
+      // Viên pha lê tím sáng #e040fb có lõi trắng
+      ctx.fillStyle = '#e040fb';
+      ctx.fillRect(18, -4, 6, 8);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(20, -2, 2, 4);
+    }
+  } else {
+    // Súng Lục (pistol): nhỏ gọn, thân thép bạc sáng, khe đẩy đạn, báng xám đậm
+    ctx.fillStyle = '#141622';
+    ctx.fillRect(0, 0, 6, 8);
+    ctx.fillRect(0, -6, 16, 8);
+
+    // Báng súng xám đậm
+    ctx.fillStyle = '#455a64';
+    ctx.fillRect(2, 0, 2, 6);
+
+    // Thân thép bạc sáng
+    ctx.fillStyle = '#b0bec5';
+    ctx.fillRect(2, -4, 12, 4);
+    ctx.fillStyle = '#eceff1';
+    ctx.fillRect(2, -4, 12, 2);
+
+    // Khe đẩy đạn & rãnh dưới nòng
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(6, -4, 4, 2);
+    ctx.fillStyle = '#78909c';
+    ctx.fillRect(4, -2, 8, 2);
+  }
+
+  ctx.restore();
+}

@@ -1,5 +1,7 @@
 // Quản lý Boss cuối "VUA HẦM NGỤC" tại phòng 1-4 với 3 chiêu thức luân phiên và Phase 2 cuồng nộ.
 
+import { assets } from './assets.js';
+
 const BOSS_ATTACKS = ['ring', 'homing', 'charge'];
 
 /**
@@ -64,6 +66,12 @@ export class Boss {
 
     this.isEnraged = false;
     this.aimAngle = Math.PI;
+
+    // Hoạt ảnh Pixel Art của Boss (Big Demon)
+    this.animTimer = 0;
+    this.animFrame = 0;
+    this.facingX = -1;
+    this.isMoving = false;
 
     // Mốc máu rơi Ngọc năng lượng giúp người chơi duy trì năng lượng suốt trận Boss
     this.energyMilestones = [0.75, 0.5, 0.25];
@@ -164,11 +172,23 @@ export class Boss {
     }
     this.chargeTrail = this.chargeTrail.filter((ghost) => ghost.alpha > 0);
 
+    const prevX = this.x;
+    const prevY = this.y;
+
     if (player) {
       const dx = player.x - this.x;
       const dy = player.y - this.y;
       if (Math.hypot(dx, dy) > 0.0001) {
         this.aimAngle = Math.atan2(dy, dx);
+      }
+      // Giữ nguyên hướng lao trong lúc tụ và lướt charge; còn lại quay mặt về phía player
+      if (
+        (this.state === 'telegraph' || this.state === 'attack') &&
+        this.currentAttack === 'charge'
+      ) {
+        this.facingX = this.chargeDirX >= 0 ? 1 : -1;
+      } else {
+        this.facingX = dx >= 0 ? 1 : -1;
       }
     }
 
@@ -178,6 +198,24 @@ export class Boss {
       this.#updateTelegraph(dt, map, player, bulletManager);
     } else if (this.state === 'attack') {
       this.#updateAttack(dt, map, bulletManager);
+    }
+
+    const movedDist = Math.hypot(this.x - prevX, this.y - prevY);
+    this.isMoving =
+      movedDist > 0.2 ||
+      (this.state === 'attack' && this.currentAttack === 'charge');
+
+    let frameDuration = this.isMoving ? 0.095 : 0.14;
+    if (this.state === 'attack' && this.currentAttack === 'charge') {
+      frameDuration = 0.06;
+    } else if (this.isEnraged) {
+      frameDuration *= 0.8;
+    }
+
+    this.animTimer += dt;
+    while (this.animTimer >= frameDuration) {
+      this.animTimer -= frameDuration;
+      this.animFrame = (this.animFrame + 1) % 4;
     }
 
     if (player && player.hp > 0) {
@@ -191,92 +229,106 @@ export class Boss {
   }
 
   /**
-   * Vẽ cảnh báo chiêu thức, thân Boss uy nghiêm kèm vương miện và hiệu ứng nổ khi gục.
+   * Vẽ bóng, hào quang cuồng nộ, sprite hoạt ảnh Boss, đường cảnh báo chiêu và vụ nổ khi gục.
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
     this.#drawChargeTrail(ctx);
 
     if (this.active) {
-      this.#drawTelegraph(ctx);
-
       const drawX = Math.round(this.x);
       const drawY = Math.round(this.y);
       const left = drawX - Math.floor(this.width / 2);
       const top = drawY - Math.floor(this.height / 2);
+      const feetY = this.y + this.height / 2 + 6;
       const isFlashing = this.hitFlashTimer > 0;
 
       ctx.save();
 
-      // Bóng đổ lớn dưới chân Boss
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.44)';
+      // Bóng elip lớn đậm dưới chân Boss
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
       ctx.beginPath();
-      ctx.ellipse(drawX, top + this.height + 2, 24, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(drawX, this.y + this.height / 2 + 4, 28, 10, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Vầng hào quang đỏ khi Boss bước vào Phase 2 Cuồng nộ
+      // Vòng hào quang đỏ rực nhấp nháy khi Boss ở Phase 2 Cuồng nộ
       if (this.isEnraged) {
-        const pulse = 0.25 + Math.sin(performance.now() * 0.01) * 0.1;
+        const now =
+          typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const pulse = 0.28 + Math.sin(now * 0.012) * 0.14;
         ctx.fillStyle = `rgba(255, 23, 68, ${pulse.toFixed(2)})`;
         ctx.beginPath();
-        ctx.arc(drawX, drawY, this.radius + 8, 0, Math.PI * 2);
+        ctx.arc(drawX, drawY, this.radius + 10, 0, Math.PI * 2);
         ctx.fill();
+
+        ctx.strokeStyle = `rgba(255, 82, 82, ${(pulse + 0.35).toFixed(2)})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(drawX, feetY - 4, 30, 12, 0, 0, Math.PI * 2);
+        ctx.stroke();
       }
 
-      // Viền ngoài bo góc (đỏ rực #ff1744 khi cuồng nộ, tím sẫm ở Phase 1)
-      ctx.fillStyle = isFlashing
-        ? '#ffffff'
-        : this.isEnraged
-          ? '#ff1744'
-          : '#1e092e';
-      ctx.fillRect(left + 3, top, this.width - 6, this.height);
-      ctx.fillRect(left, top + 3, this.width, this.height - 6);
+      const framePrefix = this.isMoving ? 'boss_run' : 'boss_idle';
+      const frameImg = assets.getAnimFrame(framePrefix, this.animFrame);
 
-      // Thân khối vuông lớn màu tím than uy nghiêm (#4a148c)
-      ctx.fillStyle = isFlashing ? '#ffffff' : '#4a148c';
-      ctx.fillRect(left + 4, top + 4, this.width - 8, this.height - 8);
+      if (frameImg) {
+        assets.drawSprite(ctx, frameImg, this.x, feetY, 2, {
+          flipX: this.facingX < 0,
+          flashWhite: isFlashing,
+        });
+      } else {
+        // Dự phòng khối màu uy nghiêm cũ nếu chưa có sprite
+        ctx.fillStyle = isFlashing
+          ? '#ffffff'
+          : this.isEnraged
+            ? '#ff1744'
+            : '#1e092e';
+        ctx.fillRect(left + 3, top, this.width - 6, this.height);
+        ctx.fillRect(left, top + 3, this.width, this.height - 6);
 
-      if (!isFlashing) {
-        // Mảng sáng trên vai và mảng tối phía dưới tạo khối 2.5D
-        ctx.fillStyle = this.isEnraged ? '#8e24aa' : '#6a1b9a';
-        ctx.fillRect(left + 6, top + 4, this.width - 12, 8);
-        ctx.fillStyle = '#310b5e';
-        ctx.fillRect(left + 4, top + this.height - 14, this.width - 8, 10);
+        ctx.fillStyle = isFlashing ? '#ffffff' : '#4a148c';
+        ctx.fillRect(left + 4, top + 4, this.width - 8, this.height - 8);
 
-        // Miếng giáp ngực nổi bật giữa thân
-        ctx.fillStyle = this.isEnraged ? '#b71c1c' : '#380d6b';
-        ctx.fillRect(left + 12, top + 30, this.width - 24, 12);
-        ctx.fillStyle = '#ffd54f';
-        ctx.fillRect(drawX - 4, top + 33, 8, 6);
+        if (!isFlashing) {
+          ctx.fillStyle = this.isEnraged ? '#8e24aa' : '#6a1b9a';
+          ctx.fillRect(left + 6, top + 4, this.width - 12, 8);
+          ctx.fillStyle = '#310b5e';
+          ctx.fillRect(left + 4, top + this.height - 14, this.width - 8, 10);
+
+          ctx.fillStyle = this.isEnraged ? '#b71c1c' : '#380d6b';
+          ctx.fillRect(left + 12, top + 30, this.width - 24, 12);
+          ctx.fillStyle = '#ffd54f';
+          ctx.fillRect(drawX - 4, top + 33, 8, 6);
+        }
+
+        this.#drawCrown(ctx, drawX, top);
+
+        const lookX = Math.cos(this.aimAngle) >= 0 ? 3 : -3;
+        const lookY = Math.round(Math.sin(this.aimAngle) * 2);
+        const eyeCenterX = drawX + lookX;
+        const eyeCenterY = drawY - 4 + lookY;
+
+        ctx.fillStyle = '#140421';
+        ctx.fillRect(eyeCenterX - 15, eyeCenterY - 6, 30, 12);
+
+        ctx.fillStyle = this.isEnraged ? '#ff5252' : '#8e24aa';
+        ctx.fillRect(eyeCenterX - 13, eyeCenterY - 5, 10, 3);
+        ctx.fillRect(eyeCenterX + 3, eyeCenterY - 5, 10, 3);
+
+        const eyeColor = this.isEnraged ? '#ff1744' : '#ffeb3b';
+        const eyeCore = this.isEnraged ? '#ff8a80' : '#ffffff';
+        ctx.fillStyle = eyeColor;
+        ctx.fillRect(eyeCenterX - 11, eyeCenterY - 1, 7, 5);
+        ctx.fillRect(eyeCenterX + 4, eyeCenterY - 1, 7, 5);
+        ctx.fillStyle = eyeCore;
+        ctx.fillRect(eyeCenterX - 9, eyeCenterY, 3, 2);
+        ctx.fillRect(eyeCenterX + 6, eyeCenterY, 3, 2);
       }
-
-      // Vương miện vàng (#ffd54f) trên đỉnh đầu Boss
-      this.#drawCrown(ctx, drawX, top);
-
-      // Hai mắt giận dữ nhìn theo hướng người chơi (vàng ở Phase 1, rực đỏ ở Phase 2)
-      const lookX = Math.cos(this.aimAngle) >= 0 ? 3 : -3;
-      const lookY = Math.round(Math.sin(this.aimAngle) * 2);
-      const eyeCenterX = drawX + lookX;
-      const eyeCenterY = drawY - 4 + lookY;
-
-      ctx.fillStyle = '#140421';
-      ctx.fillRect(eyeCenterX - 15, eyeCenterY - 6, 30, 12);
-
-      // Lông mày chéo giận dữ
-      ctx.fillStyle = this.isEnraged ? '#ff5252' : '#8e24aa';
-      ctx.fillRect(eyeCenterX - 13, eyeCenterY - 5, 10, 3);
-      ctx.fillRect(eyeCenterX + 3, eyeCenterY - 5, 10, 3);
-
-      const eyeColor = this.isEnraged ? '#ff1744' : '#ffeb3b';
-      const eyeCore = this.isEnraged ? '#ff8a80' : '#ffffff';
-      ctx.fillStyle = eyeColor;
-      ctx.fillRect(eyeCenterX - 11, eyeCenterY - 1, 7, 5);
-      ctx.fillRect(eyeCenterX + 4, eyeCenterY - 1, 7, 5);
-      ctx.fillStyle = eyeCore;
-      ctx.fillRect(eyeCenterX - 9, eyeCenterY, 3, 2);
-      ctx.fillRect(eyeCenterX + 6, eyeCenterY, 3, 2);
 
       ctx.restore();
+
+      // Vẽ các dấu hiệu cảnh báo chiêu thức lên trên cùng để không bị thân Boss che mất
+      this.#drawTelegraph(ctx);
     }
 
     this.#drawDeathExplosion(ctx);
@@ -347,6 +399,8 @@ export class Boss {
       this.chargeTrail.push({
         x: this.x,
         y: this.y,
+        flipX: this.facingX < 0,
+        animFrame: this.animFrame,
         alpha: 0.45,
       });
 
@@ -632,15 +686,35 @@ export class Boss {
       return;
     }
 
-    ctx.save();
+    const tintColor = this.isEnraged ? '#ff1744' : '#ab47bc';
     for (const ghost of this.chargeTrail) {
-      const left = Math.round(ghost.x - this.width / 2);
-      const top = Math.round(ghost.y - this.height / 2);
-      ctx.globalAlpha = Math.max(0, ghost.alpha);
-      ctx.fillStyle = this.isEnraged ? '#ff1744' : '#7b1fa2';
-      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+      const ghostImg = assets.getAnimFrame(
+        'boss_run',
+        ghost.animFrame ?? this.animFrame,
+      );
+      if (ghostImg) {
+        assets.drawSprite(
+          ctx,
+          ghostImg,
+          ghost.x,
+          ghost.y + this.height / 2 + 6,
+          2,
+          {
+            flipX: Boolean(ghost.flipX),
+            alpha: Math.max(0, ghost.alpha),
+            tintColor,
+          },
+        );
+      } else {
+        const left = Math.round(ghost.x - this.width / 2);
+        const top = Math.round(ghost.y - this.height / 2);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, ghost.alpha);
+        ctx.fillStyle = this.isEnraged ? '#ff1744' : '#7b1fa2';
+        ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+        ctx.restore();
+      }
     }
-    ctx.restore();
   }
 
   #spawnDeathExplosion() {
