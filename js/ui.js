@@ -625,3 +625,139 @@ export class GameHUD {
     ctx.restore();
   }
 }
+
+/**
+ * Đổi số giây thành chuỗi thời gian dạng "MM:SS".
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function formatTime(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const mins = Math.floor(safeSeconds / 60);
+  const secs = safeSeconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+/**
+ * Quản lý 4 lớp phủ màn hình HTML (Start Menu, Pause, Victory, Game Over) và bảng thống kê.
+ */
+export class ScreenManager {
+  /**
+   * @param {{
+   *   onStart?: () => void,
+   *   onResume?: () => void,
+   *   onRestart?: () => void,
+   *   onMainMenu?: () => void,
+   * }} [callbacks={}]
+   */
+  constructor(callbacks = {}) {
+    this.callbacks = callbacks;
+
+    const getEl = (id) =>
+      typeof document !== 'undefined' ? document.getElementById(id) : null;
+
+    this.screens = {
+      MENU: getEl('screen-menu'),
+      PAUSED: getEl('screen-pause'),
+      VICTORY: getEl('screen-victory'),
+      GAME_OVER: getEl('screen-gameover'),
+    };
+
+    this.statEls = {
+      victoryTime: getEl('victory-time'),
+      victoryKills: getEl('victory-kills'),
+      victoryWeapon: getEl('victory-weapon'),
+      gameoverRoom: getEl('gameover-room'),
+      gameoverKills: getEl('gameover-kills'),
+      gameoverTime: getEl('gameover-time'),
+    };
+
+    this.#bindButton(getEl('btn-start'), () => this.callbacks.onStart?.());
+    this.#bindButton(getEl('btn-resume'), () => this.callbacks.onResume?.());
+    this.#bindButton(getEl('btn-pause-restart'), () =>
+      this.callbacks.onRestart?.(),
+    );
+    this.#bindButton(getEl('btn-pause-menu'), () =>
+      this.callbacks.onMainMenu?.(),
+    );
+    this.#bindButton(getEl('btn-victory-restart'), () =>
+      this.callbacks.onRestart?.(),
+    );
+    this.#bindButton(getEl('btn-victory-menu'), () =>
+      this.callbacks.onMainMenu?.(),
+    );
+    this.#bindButton(getEl('btn-gameover-restart'), () =>
+      this.callbacks.onRestart?.(),
+    );
+    this.#bindButton(getEl('btn-gameover-menu'), () =>
+      this.callbacks.onMainMenu?.(),
+    );
+  }
+
+  /**
+   * Định dạng số giây sang "MM:SS".
+   * @param {number} seconds
+   * @returns {string}
+   */
+  formatTime(seconds) {
+    return formatTime(seconds);
+  }
+
+  /**
+   * Ẩn toàn bộ lớp phủ rồi hiển thị đúng màn hình theo trạng thái game và cập nhật thống kê.
+   * @param {'MENU' | 'PLAYING' | 'PAUSED' | 'VICTORY' | 'GAME_OVER'} state
+   * @param {{ time?: number, kills?: number, roomLabel?: string, weaponName?: string }} [stats={}]
+   */
+  showScreen(state, stats = {}) {
+    for (const screenEl of Object.values(this.screens)) {
+      screenEl?.classList.add('hidden');
+    }
+
+    if (state === 'PLAYING') {
+      if (
+        typeof document !== 'undefined' &&
+        typeof document.activeElement?.blur === 'function'
+      ) {
+        document.activeElement.blur();
+      }
+      return;
+    }
+
+    if (state === 'VICTORY') {
+      if (this.statEls.victoryTime) {
+        this.statEls.victoryTime.textContent = formatTime(stats.time ?? 0);
+      }
+      if (this.statEls.victoryKills) {
+        this.statEls.victoryKills.textContent = String(stats.kills ?? 0);
+      }
+      if (this.statEls.victoryWeapon) {
+        this.statEls.victoryWeapon.textContent =
+          stats.weaponName ?? 'Súng Lục';
+      }
+    } else if (state === 'GAME_OVER') {
+      if (this.statEls.gameoverRoom) {
+        this.statEls.gameoverRoom.textContent = stats.roomLabel ?? '1-1';
+      }
+      if (this.statEls.gameoverKills) {
+        this.statEls.gameoverKills.textContent = String(stats.kills ?? 0);
+      }
+      if (this.statEls.gameoverTime) {
+        this.statEls.gameoverTime.textContent = formatTime(stats.time ?? 0);
+      }
+    }
+
+    this.screens[state]?.classList.remove('hidden');
+  }
+
+  #bindButton(button, handler) {
+    if (!button || typeof button.addEventListener !== 'function') {
+      return;
+    }
+    button.addEventListener('click', () => {
+      if (typeof button.blur === 'function') {
+        button.blur();
+      }
+      handler();
+    });
+  }
+}

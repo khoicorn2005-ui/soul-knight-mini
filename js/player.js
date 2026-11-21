@@ -72,6 +72,7 @@ export class Player {
     this.dashDirY = 0;
     this.dashTrail = [];
 
+    this.inputEnabled = true;
     this.weaponSystem = new WeaponSystem();
 
     this.#bindInputEvents();
@@ -163,6 +164,14 @@ export class Player {
     this.isFiring = false;
     this.weaponSystem.cooldown = 0;
     this.weaponSystem.outOfEnergyTimer = 0;
+  }
+
+  /**
+   * Đặt sạch trạng thái mọi phím di chuyển đang nhấn và trạng thái giữ chuột bắn súng.
+   */
+  resetInputs() {
+    this.keys.clear();
+    this.isFiring = false;
   }
 
   /**
@@ -465,6 +474,9 @@ export class Player {
   #bindInputEvents() {
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => {
+        if (!this.inputEnabled) {
+          return;
+        }
         if (ARROW_CODES.has(e.code)) {
           e.preventDefault();
         }
@@ -506,7 +518,7 @@ export class Player {
 
     if (this.canvas && typeof this.canvas.addEventListener === 'function') {
       this.canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0 && this.hp > 0) {
+        if (this.inputEnabled && e.button === 0 && this.hp > 0) {
           this.isFiring = true;
         }
       });
@@ -521,7 +533,7 @@ export class Player {
         'wheel',
         (e) => {
           e.preventDefault();
-          if (this.hp > 0) {
+          if (this.inputEnabled && this.hp > 0) {
             this.weaponSystem.switchWeapon();
           }
         },

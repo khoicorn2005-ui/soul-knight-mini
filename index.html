@@ -7,8 +7,101 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <canvas id="gameCanvas" width="960" height="576"></canvas>
-  <p class="controls-hint">WASD: Di chuyển | Chuột trái: Bắn | Space: Lướt | Q / Cuộn chuột: Đổi súng | E: Mở rương / Vào cổng | T: Đổi Auto-Aim</p>
+  <div class="game-container">
+    <canvas id="gameCanvas" width="960" height="576"></canvas>
+
+    <!-- Start Menu -->
+    <div id="screen-menu" class="screen-overlay">
+      <div class="menu-card">
+        <h1 class="menu-title">SOUL KNIGHT MINI</h1>
+        <p class="menu-subtitle">Khám phá 4 phòng hầm ngục • Đánh bại Vua Hầm Ngục</p>
+
+        <div class="controls-grid">
+          <div class="control-item"><kbd>WASD</kbd><span>Di chuyển</span></div>
+          <div class="control-item"><kbd>Chuột trái</kbd><span>Bắn</span></div>
+          <div class="control-item"><kbd>Space</kbd><span>Lướt né đạn</span></div>
+          <div class="control-item"><kbd>Q / Cuộn chuột</kbd><span>Đổi vũ khí</span></div>
+          <div class="control-item"><kbd>E</kbd><span>Mở rương / Vào cổng</span></div>
+          <div class="control-item"><kbd>T</kbd><span>Bật/tắt Auto-Aim</span></div>
+          <div class="control-item"><kbd>Esc</kbd><span>Tạm dừng</span></div>
+        </div>
+
+        <div class="menu-actions">
+          <button id="btn-start" type="button" class="menu-btn primary">BẮT ĐẦU CHƠI [Enter]</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pause Menu -->
+    <div id="screen-pause" class="screen-overlay hidden">
+      <div class="menu-card menu-card-compact">
+        <h2 class="menu-title">TẠM DỪNG</h2>
+        <div class="menu-actions">
+          <button id="btn-resume" type="button" class="menu-btn primary">TIẾP TỤC [Esc]</button>
+          <button id="btn-pause-restart" type="button" class="menu-btn">CHƠI LẠI TỪ 1-1</button>
+          <button id="btn-pause-menu" type="button" class="menu-btn danger">VỀ MENU CHÍNH</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Victory Screen -->
+    <div id="screen-victory" class="screen-overlay hidden">
+      <div class="menu-card menu-card-victory">
+        <h2 class="menu-title title-victory">CHIẾN THẮNG!</h2>
+        <p class="menu-subtitle">Bạn đã hạ gục Vua Hầm Ngục!</p>
+
+        <div class="stats-box">
+          <div class="stat-row">
+            <span class="stat-label">Thời gian hoàn thành</span>
+            <span id="victory-time" class="stat-value">00:00</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Số kẻ địch đã hạ</span>
+            <span id="victory-kills" class="stat-value">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Vũ khí kết thúc trận</span>
+            <span id="victory-weapon" class="stat-value">Súng Lục</span>
+          </div>
+        </div>
+
+        <div class="menu-actions">
+          <button id="btn-victory-restart" type="button" class="menu-btn primary">CHƠI LẠI [Enter]</button>
+          <button id="btn-victory-menu" type="button" class="menu-btn">VỀ MENU CHÍNH</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="screen-gameover" class="screen-overlay hidden">
+      <div class="menu-card menu-card-gameover">
+        <h2 class="menu-title title-gameover">THẤT BẠI!</h2>
+        <p class="menu-subtitle">Hiệp sĩ đã gục ngã trong hầm ngục...</p>
+
+        <div class="stats-box">
+          <div class="stat-row">
+            <span class="stat-label">Tầng đạt được</span>
+            <span id="gameover-room" class="stat-value">1-1</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Số kẻ địch đã hạ</span>
+            <span id="gameover-kills" class="stat-value">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Thời gian sinh tồn</span>
+            <span id="gameover-time" class="stat-value">00:00</span>
+          </div>
+        </div>
+
+        <div class="menu-actions">
+          <button id="btn-gameover-restart" type="button" class="menu-btn danger">THỬ LẠI [Enter]</button>
+          <button id="btn-gameover-menu" type="button" class="menu-btn">VỀ MENU CHÍNH</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="controls-hint">WASD: Di chuyển | Chuột trái: Bắn | Space: Lướt | Q / Cuộn chuột: Đổi súng | E: Mở rương / Vào cổng | T: Đổi Auto-Aim | Esc: Tạm dừng</p>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

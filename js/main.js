@@ -5,12 +5,20 @@ import { BulletManager } from './bullet.js';
 import { EnemyManager } from './enemy.js';
 import { LootManager } from './loot.js';
 import { Boss } from './boss.js';
-import { GameHUD } from './ui.js';
+import { GameHUD, ScreenManager } from './ui.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 ctx.imageSmoothingEnabled = false;
+
+const GAME_STATES = Object.freeze({
+  MENU: 'MENU',
+  PLAYING: 'PLAYING',
+  PAUSED: 'PAUSED',
+  VICTORY: 'VICTORY',
+  GAME_OVER: 'GAME_OVER',
+});
 
 const ROOM_CONFIGS = [
   {
@@ -40,6 +48,13 @@ const ROOM_CONFIGS = [
   },
 ];
 
+const BLOCKED_KEYS_WHEN_NOT_PLAYING = new Set([
+  'Space',
+  'KeyQ',
+  'KeyE',
+  'KeyT',
+]);
+
 const map = new DungeonMap();
 const player = new Player(128, 288, canvas);
 const aimSystem = new AimSystem(canvas);
@@ -47,6 +62,11 @@ const bulletManager = new BulletManager();
 const enemyManager = new EnemyManager();
 const lootManager = new LootManager();
 const hud = new GameHUD();
+
+let gameState = GAME_STATES.MENU;
+let runTime = 0;
+let enemiesDefeated = 0;
+let bossDefeatCounted = false;
 
 let currentRoomIndex = 0;
 let currentWaveIndex = 0;
@@ -57,8 +77,15 @@ let toastMessage = '';
 let toastTimer = 0;
 
 let boss = null;
-let isVictory = false;
 let victoryDelayTimer = 0;
+let lastTime = null;
+
+const screenManager = new ScreenManager({
+  onStart: () => startNewGame(),
+  onResume: () => togglePause(),
+  onRestart: () => startNewGame(),
+  onMainMenu: () => openMainMenu(),
+});
 
 function showToast(message, duration = 2.0) {
   toastMessage = message;
@@ -88,7 +115,7 @@ function startRoom(roomIndex) {
   currentRoomIndex = safeIndex;
   currentWaveIndex = 0;
   boss = null;
-  isVictory = false;
+  bossDefeatCounted = false;
   victoryDelayTimer = 0;
 
   map.loadRoom(safeIndex);
@@ -120,11 +147,123 @@ function startRoom(roomIndex) {
   }
 }
 
-startRoom(0);
+/**
+ * Bắt đầu một lượt chơi mới từ Phòng 1-1 và đặt lại toàn bộ chỉ số + thống kê.
+ */
+function startNewGame() {
+  player.resetStats();
+  player.resetInputs();
+  player.weaponSystem.resetWeapons();
+  player.inputEnabled = true;
+
+  runTime = 0;
+  enemiesDefeated = 0;
+  bossDefeatCounted = false;
+  victoryDelayTimer = 0;
+  toastMessage = '';
+  toastTimer = 0;
+
+  startRoom(0);
+
+  gameState = GAME_STATES.PLAYING;
+  lastTime = performance.now();
+  screenManager.showScreen(GAME_STATES.PLAYING);
+}
+
+/**
+ * Quay lại Start Menu và dựng sẵn nền phòng hầm ngục sạch đẹp phía sau.
+ */
+function openMainMenu() {
+  player.resetInputs();
+  player.inputEnabled = false;
+
+  currentRoomIndex = 0;
+  currentWaveIndex = 0;
+  roomCleared = false;
+  roomBannerText = '';
+  roomBannerTimer = 0;
+  toastMessage = '';
+  toastTimer = 0;
+
+  boss = null;
+  bossDefeatCounted = false;
+  victoryDelayTimer = 0;
+
+  map.loadRoom(0);
+  map.isLocked = false;
+  bulletManager.clear();
+  enemyManager.clearAll();
+  lootManager.clearAll();
+
+  gameState = GAME_STATES.MENU;
+  screenManager.showScreen(GAME_STATES.MENU);
+}
+
+/**
+ * Chuyển đổi qua lại giữa đang chơi (PLAYING) và tạm dừng (PAUSED) bằng phím Esc hoặc nút Resume.
+ */
+function togglePause() {
+  if (gameState === GAME_STATES.PLAYING) {
+    player.resetInputs();
+    player.inputEnabled = false;
+    gameState = GAME_STATES.PAUSED;
+    screenManager.showScreen(GAME_STATES.PAUSED);
+  } else if (gameState === GAME_STATES.PAUSED) {
+    player.inputEnabled = true;
+    gameState = GAME_STATES.PLAYING;
+    lastTime = performance.now();
+    screenManager.showScreen(GAME_STATES.PLAYING);
+  }
+}
+
+openMainMenu();
 
 if (typeof window !== 'undefined') {
+  // Chặn các phím gameplay (Space, Q, E, T) ở pha capture khi không ở trạng thái PLAYING
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (
+        gameState !== GAME_STATES.PLAYING &&
+        BLOCKED_KEYS_WHEN_NOT_PLAYING.has(e.code)
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    },
+    true,
+  );
+
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyE' && !e.repeat && player.hp > 0 && !isVictory) {
+    if (e.code === 'Escape' && !e.repeat) {
+      if (
+        gameState === GAME_STATES.PLAYING ||
+        gameState === GAME_STATES.PAUSED
+      ) {
+        e.preventDefault();
+        togglePause();
+      }
+      return;
+    }
+
+    if (e.code === 'Enter' && !e.repeat) {
+      if (
+        gameState === GAME_STATES.MENU ||
+        gameState === GAME_STATES.VICTORY ||
+        gameState === GAME_STATES.GAME_OVER
+      ) {
+        e.preventDefault();
+        startNewGame();
+      }
+      return;
+    }
+
+    if (
+      e.code === 'KeyE' &&
+      !e.repeat &&
+      gameState === GAME_STATES.PLAYING &&
+      player.hp > 0
+    ) {
       const result = lootManager.tryInteract(player);
       if (result) {
         if (result.type === 'portal') {
@@ -136,75 +275,19 @@ if (typeof window !== 'undefined') {
         }
       }
     }
-
-    if (e.code === 'Enter' && !e.repeat && (player.hp <= 0 || isVictory)) {
-      player.resetStats();
-      player.weaponSystem.resetWeapons();
-      toastMessage = '';
-      toastTimer = 0;
-      startRoom(0);
-    }
   });
 }
-
-// Màn hình gục tạm thời, sẽ thay bằng màn hình Game Over đầy đủ ở Chặng 2 Chương 7
-function drawDownedOverlay(ctx) {
-  ctx.save();
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.72)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const msg = 'HIỆP SĨ ĐÃ GỤC - Nhấn ENTER để chơi lại từ phòng 1-1';
-  ctx.font = 'bold 20px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  ctx.fillStyle = '#141824';
-  ctx.fillText(msg, canvas.width / 2 + 2, canvas.height / 2 + 2);
-  ctx.fillStyle = '#ff8a80';
-  ctx.fillText(msg, canvas.width / 2, canvas.height / 2);
-  ctx.restore();
-}
-
-// Man hinh Chien thang tam thoi o Chuong 6, se nang cap thanh luong UI day du o Chuong 7
-function drawVictoryOverlay(ctx) {
-  ctx.save();
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.76)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  ctx.font = 'bold 38px monospace';
-  ctx.fillStyle = '#141824';
-  ctx.fillText('CHIẾN THẮNG!', centerX + 3, centerY - 36 + 3);
-  ctx.fillStyle = '#ffd54f';
-  ctx.fillText('CHIẾN THẮNG!', centerX, centerY - 36);
-
-  ctx.font = 'bold 18px monospace';
-  ctx.fillStyle = '#e0f7fa';
-  ctx.fillText('Bạn đã hạ gục Vua Hầm Ngục!', centerX, centerY + 8);
-
-  ctx.font = 'bold 14px monospace';
-  ctx.fillStyle = '#a5d6a7';
-  ctx.fillText('Nhấn ENTER để chơi lại từ Phòng 1-1', centerX, centerY + 46);
-
-  ctx.restore();
-}
-
-let lastTime = null;
 
 function gameLoop(timestamp) {
   if (lastTime === null) {
     lastTime = timestamp;
   }
 
-  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  const dt = Math.max(0, Math.min((timestamp - lastTime) / 1000, 0.05));
   lastTime = timestamp;
 
-  if (player.hp > 0 && !isVictory) {
+  if (gameState === GAME_STATES.PLAYING) {
+    runTime += dt;
     roomBannerTimer = Math.max(0, roomBannerTimer - dt);
     toastTimer = Math.max(0, toastTimer - dt);
 
@@ -220,6 +303,7 @@ function gameLoop(timestamp) {
 
     bulletManager.update(dt, map, activeTargets, player);
     enemyManager.update(dt, map, player, bulletManager, (deadEnemy) => {
+      enemiesDefeated += 1;
       const orbCount = Math.random() < 0.5 ? 2 : 3;
       lootManager.spawnEnergyOrbs(deadEnemy.x, deadEnemy.y, orbCount);
     });
@@ -229,7 +313,11 @@ function gameLoop(timestamp) {
         lootManager.spawnEnergyOrbs(x, y, count);
       });
 
-      if (!boss.active && !isVictory) {
+      if (!boss.active) {
+        if (!bossDefeatCounted) {
+          bossDefeatCounted = true;
+          enemiesDefeated += 1;
+        }
         if (!roomCleared) {
           roomCleared = true;
           map.isLocked = false;
@@ -238,10 +326,6 @@ function gameLoop(timestamp) {
           );
         }
         victoryDelayTimer += dt;
-        if (victoryDelayTimer >= 1.1) {
-          isVictory = true;
-          player.isFiring = false;
-        }
       }
     }
 
@@ -264,37 +348,59 @@ function gameLoop(timestamp) {
         lootManager.spawnRoomRewards(currentRoomIndex, nextRoomLabel, player);
       }
     }
+
+    // Kiểm tra điều kiện kết thúc trận: Gục ngã (Game Over) hoặc Hạ Boss xong (Victory)
+    if (player.hp <= 0) {
+      player.resetInputs();
+      player.inputEnabled = false;
+      gameState = GAME_STATES.GAME_OVER;
+      screenManager.showScreen(GAME_STATES.GAME_OVER, {
+        roomLabel: ROOM_CONFIGS[currentRoomIndex].label,
+        kills: enemiesDefeated,
+        time: runTime,
+      });
+    } else if (boss && !boss.active && victoryDelayTimer >= 1.1) {
+      player.resetInputs();
+      player.inputEnabled = false;
+      gameState = GAME_STATES.VICTORY;
+      screenManager.showScreen(GAME_STATES.VICTORY, {
+        time: runTime,
+        kills: enemiesDefeated,
+        weaponName:
+          player.weaponSystem.getCurrentWeapon()?.name ?? 'Súng Lục',
+      });
+    }
   }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   map.draw(ctx);
-  lootManager.draw(ctx, player);
-  enemyManager.draw(ctx);
-  if (boss) {
-    boss.draw(ctx);
-  }
-  bulletManager.draw(ctx);
-  player.draw(ctx);
-  aimSystem.draw(ctx, player);
 
-  hud.draw(ctx, {
-    player,
-    aimSystem,
-    currentRoomIndex,
-    roomLabel: ROOM_CONFIGS[currentRoomIndex].label,
-    waveText: getWaveStatusText(),
-    roomCleared,
-    boss,
-    roomBannerText,
-    roomBannerTimer,
-    toastMessage,
-    toastTimer,
-  });
+  if (gameState !== GAME_STATES.MENU) {
+    lootManager.draw(ctx, player);
+    enemyManager.draw(ctx);
+    if (boss) {
+      boss.draw(ctx);
+    }
+    bulletManager.draw(ctx);
+    player.draw(ctx);
 
-  if (player.hp <= 0) {
-    drawDownedOverlay(ctx);
-  } else if (isVictory) {
-    drawVictoryOverlay(ctx);
+    if (gameState === GAME_STATES.PLAYING) {
+      aimSystem.draw(ctx, player);
+    }
+
+    hud.draw(ctx, {
+      player,
+      aimSystem,
+      currentRoomIndex,
+      roomLabel: ROOM_CONFIGS[currentRoomIndex].label,
+      waveText: getWaveStatusText(),
+      roomCleared,
+      boss,
+      roomBannerText,
+      roomBannerTimer,
+      toastMessage,
+      toastTimer,
+    });
   }
 
   requestAnimationFrame(gameLoop);
