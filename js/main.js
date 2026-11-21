@@ -2,6 +2,7 @@ import { DungeonMap } from './map.js';
 import { Player } from './player.js';
 import { AimSystem } from './weapon.js';
 import { BulletManager } from './bullet.js';
+import { EnemyManager } from './enemy.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -12,62 +13,44 @@ const map = new DungeonMap();
 const player = new Player(canvas.width / 2, canvas.height / 2, canvas);
 const aimSystem = new AimSystem(canvas);
 const bulletManager = new BulletManager();
+const enemyManager = new EnemyManager();
 
-// Bia tap ban tam thoi de test Auto-Aim o Chuong 4, se thay bang quai that o Chuong 5
-const testTargets = [
-  { x: 208, y: 112, radius: 14, hitFlashTimer: 0 },
-  { x: 752, y: 208, radius: 14, hitFlashTimer: 0 },
-  { x: 464, y: 464, radius: 14, hitFlashTimer: 0 },
-];
+enemyManager.spawnTestWave(map, player);
 
-function drawTestTargets(ctx, targets) {
-  for (const target of targets) {
-    const r = target.radius;
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.beginPath();
-    ctx.ellipse(target.x, target.y + r, r * 0.8, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#2a1215';
-    ctx.beginPath();
-    ctx.arc(target.x, target.y, r + 1, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (target.hitFlashTimer > 0) {
-      // Nhấp nháy trắng nổi bật khi bia bị đạn bắn trúng
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffe082';
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, r * 0.45, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      ctx.fillStyle = '#e53935';
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, r * 0.68, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#e53935';
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, r * 0.36, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(Math.round(target.x) - 1, Math.round(target.y) - 1, 2, 2);
+// Phim test tam thoi o Chuong 5 de goi lai quai, se bo khi lam vong lap phong o Chuong 6
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyN' && !e.repeat) {
+      enemyManager.spawnTestWave(map, player);
     }
+  });
+}
 
-    ctx.restore();
-  }
+function drawEnemyCounter(ctx, count) {
+  const label = `Quái: ${count} | [N: Sinh lại quái]`;
+
+  ctx.save();
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  const textWidth = ctx.measureText
+    ? ctx.measureText(label).width
+    : label.length * 7;
+  const width = Math.ceil(textWidth) + 16;
+  const height = 22;
+  const x = canvas.width - width - 10;
+  const y = 5;
+
+  ctx.fillStyle = 'rgba(14, 16, 26, 0.78)';
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = count > 0 ? '#e53935' : '#66bb6a';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+
+  ctx.fillStyle = count > 0 ? '#ffcdd2' : '#c8e6c9';
+  ctx.fillText(label, x + 8, y + height / 2);
+  ctx.restore();
 }
 
 function drawHud(ctx, player) {
@@ -164,24 +147,21 @@ function gameLoop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
-  for (const target of testTargets) {
-    if (target.hitFlashTimer > 0) {
-      target.hitFlashTimer = Math.max(0, target.hitFlashTimer - dt);
-    }
-  }
-
   player.update(dt, map, bulletManager);
-  aimSystem.update(player, testTargets);
+  const activeEnemies = enemyManager.getActiveEnemies();
+  aimSystem.update(player, activeEnemies);
   player.aimAngle = aimSystem.aimAngle;
-  bulletManager.update(dt, map, testTargets);
+  enemyManager.update(dt, map, player, bulletManager);
+  bulletManager.update(dt, map, activeEnemies, player);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   map.draw(ctx);
-  drawTestTargets(ctx, testTargets);
+  enemyManager.draw(ctx);
   bulletManager.draw(ctx);
   player.draw(ctx);
   aimSystem.draw(ctx, player);
   drawHud(ctx, player);
+  drawEnemyCounter(ctx, enemyManager.getActiveEnemies().length);
 
   requestAnimationFrame(gameLoop);
 }

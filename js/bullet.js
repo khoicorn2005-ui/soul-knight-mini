@@ -15,8 +15,9 @@ export class Bullet {
    * @param {number} radius
    * @param {number} damage
    * @param {string} color
+   * @param {'player' | 'enemy'} [owner='player']
    */
-  constructor(x, y, vx, vy, radius, damage, color) {
+  constructor(x, y, vx, vy, radius, damage, color, owner = 'player') {
     this.x = x;
     this.y = y;
     this.vx = vx;
@@ -24,22 +25,24 @@ export class Bullet {
     this.radius = radius;
     this.damage = damage;
     this.color = color;
+    this.owner = owner;
     this.active = true;
   }
 
   /**
-   * Di chuyển đạn theo vận tốc và kiểm tra va chạm tường/cột/thùng, biên canvas hoặc mục tiêu.
+   * Di chuyển đạn theo vận tốc và kiểm tra va chạm tường/cột/thùng, biên canvas, quái hoặc người chơi.
    * @param {number} dt
    * @param {import('./map.js').DungeonMap} map
-   * @param {Array<{ x: number, y: number, radius?: number, alive?: boolean, hitFlashTimer?: number }>} [targets=[]]
+   * @param {Array<object>} [enemies=[]]
+   * @param {object | null} [player=null]
    * @returns {{ x: number, y: number, color: string, isTargetHit: boolean } | null}
    */
-  update(dt, map, targets = []) {
+  update(dt, map, enemies = [], player = null) {
     if (!this.active || dt <= 0) {
       return null;
     }
 
-    // Kiểm tra ngay điểm xuất phát đề phòng đầu nòng súng sát tường/vật cản
+    // Kiểm tra ngay điểm xuất phát đề phòng đầu nòng súng/trượng sát tường hoặc vật cản
     if (map && map.isSolidAt(this.x, this.y)) {
       this.active = false;
       return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
@@ -70,15 +73,32 @@ export class Bullet {
       return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
     }
 
-    for (const target of targets) {
-      if (!target || target.alive === false) {
-        continue;
+    if (this.owner === 'player') {
+      for (const enemy of enemies) {
+        if (!enemy || enemy.active === false) {
+          continue;
+        }
+        const enemyRadius = enemy.radius ?? 12;
+        const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+        if (dist < this.radius + enemyRadius) {
+          this.active = false;
+          if (typeof enemy.takeDamage === 'function') {
+            enemy.takeDamage(this.damage);
+          } else {
+            enemy.hitFlashTimer = 0.12;
+          }
+          return { x: this.x, y: this.y, color: this.color, isTargetHit: true };
+        }
       }
-      const dist = Math.hypot(target.x - this.x, target.y - this.y);
-      if (dist < this.radius + (target.radius ?? 0)) {
+    } else if (this.owner === 'enemy' && player) {
+      const playerRadius =
+        player.radius ??
+        Math.min(player.width ?? 22, player.height ?? 22) / 2;
+      const dist = Math.hypot(player.x - this.x, player.y - this.y);
+      if (dist < this.radius + playerRadius) {
         this.active = false;
-        target.hitFlashTimer = 0.12;
-        return { x: this.x, y: this.y, color: this.color, isTargetHit: true };
+        player.triggerHitFlash?.();
+        return { x: this.x, y: this.y, color: '#ff3b3b', isTargetHit: true };
       }
     }
 
@@ -104,22 +124,24 @@ export class BulletManager {
    * @param {number} damage
    * @param {number} radius
    * @param {string} color
+   * @param {'player' | 'enemy'} [owner='player']
    */
-  spawn(x, y, angle, speed, damage, radius, color) {
+  spawn(x, y, angle, speed, damage, radius, color, owner = 'player') {
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed;
-    this.bullets.push(new Bullet(x, y, vx, vy, radius, damage, color));
+    this.bullets.push(new Bullet(x, y, vx, vy, radius, damage, color, owner));
   }
 
   /**
    * Cập nhật toàn bộ đạn/hiệu ứng và dọn bỏ các phần tử không còn active.
    * @param {number} dt
    * @param {import('./map.js').DungeonMap} map
-   * @param {Array<object>} [targets=[]]
+   * @param {Array<object>} [enemies=[]]
+   * @param {object | null} [player=null]
    */
-  update(dt, map, targets = []) {
+  update(dt, map, enemies = [], player = null) {
     for (const bullet of this.bullets) {
-      const impact = bullet.update(dt, map, targets);
+      const impact = bullet.update(dt, map, enemies, player);
       if (impact) {
         this.#spawnImpact(impact.x, impact.y, impact.color, impact.isTargetHit);
       }
@@ -143,34 +165,69 @@ export class BulletManager {
   }
 
   /**
-   * Vẽ đạn sắc nét kèm viền tối và hiệu ứng tia lửa va chạm.
+   * Vẽ đạn sắc nét (phân biệt rõ đạn người chơi và đạn đỏ của quái) cùng hiệu ứng tia lửa va chạm.
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
     ctx.save();
 
     for (const bullet of this.bullets) {
-      // Viền tối giúp viên đạn nổi bật rõ ràng trên mọi nền gạch
-      ctx.fillStyle = '#141824';
-      ctx.beginPath();
-      ctx.arc(bullet.x, bullet.y, bullet.radius + 1.5, 0, Math.PI * 2);
-      ctx.fill();
+      if (bullet.owner === 'enemy') {
+        // Đạn phe quái: viền tối, thân đỏ tươi và lõi trắng sáng kiểu Soul Knight
+        ctx.fillStyle = '#2b0909';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius + 1.5, 0, Math.PI * 2);
+        ctx.fill();
 
-      ctx.fillStyle = bullet.color;
-      ctx.beginPath();
-      ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-      ctx.fill();
+        ctx.fillStyle = bullet.color || '#ff3b3b';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(
-        bullet.x - 0.5,
-        bullet.y - 0.5,
-        Math.max(1.5, bullet.radius * 0.4),
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
+        ctx.fillStyle = '#ff8a80';
+        ctx.beginPath();
+        ctx.arc(
+          bullet.x,
+          bullet.y,
+          Math.max(2, bullet.radius * 0.65),
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(
+          bullet.x,
+          bullet.y,
+          Math.max(1.5, bullet.radius * 0.4),
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      } else {
+        // Đạn phe người chơi: viền tối nhẹ giúp nổi bật trên nền gạch tối
+        ctx.fillStyle = '#141824';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius + 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = bullet.color;
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(
+          bullet.x - 0.5,
+          bullet.y - 0.5,
+          Math.max(1.5, bullet.radius * 0.4),
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
     }
 
     for (const impact of this.impacts) {

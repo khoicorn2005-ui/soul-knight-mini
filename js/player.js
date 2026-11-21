@@ -53,9 +53,17 @@ export class Player {
     this.aimAngle = 0;
     this.keys = new Set();
     this.isFiring = false;
+    this.hitFlashTimer = 0;
     this.weaponSystem = new WeaponSystem();
 
     this.#bindInputEvents();
+  }
+
+  /**
+   * Kích hoạt nhấp nháy báo hiệu nhân vật vừa bị quái chạm hoặc trúng đạn.
+   */
+  triggerHitFlash() {
+    this.hitFlashTimer = 0.18;
   }
 
   /** @returns {number} */
@@ -82,6 +90,8 @@ export class Player {
     if (dt <= 0) {
       return;
     }
+
+    this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
 
     let dx = 0;
     let dy = 0;
@@ -146,18 +156,27 @@ export class Player {
     ctx.fillRect(crestX, top - 2, 8, 3);
 
     // Viền đậm bao quanh thân hiệp sĩ
-    ctx.fillStyle = '#142433';
+    ctx.fillStyle = this.hitFlashTimer > 0 ? '#7f1d1d' : '#142433';
     ctx.fillRect(left, top, this.width, this.height);
 
-    // Thân giáp xanh dương sáng và phần sáng trên đỉnh mũ
-    ctx.fillStyle = '#4fc3f7';
-    ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
-    ctx.fillStyle = '#b3e5fc';
-    ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
+    // Thân giáp (nhấp nháy trắng/đỏ nhạt khi vừa trúng đòn)
+    if (this.hitFlashTimer > 0) {
+      ctx.fillStyle = this.hitFlashTimer > 0.09 ? '#ffffff' : '#ffcdd2';
+      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
+      ctx.fillStyle = '#ff8a80';
+      ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+    } else {
+      ctx.fillStyle = '#4fc3f7';
+      ctx.fillRect(left + 2, top + 2, this.width - 4, this.height - 4);
+      ctx.fillStyle = '#b3e5fc';
+      ctx.fillRect(left + 3, top + 2, this.width - 6, 3);
 
-    // Phần giáp dưới / chân đậm hơn
-    ctx.fillStyle = '#2980b9';
-    ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+      // Phần giáp dưới / chân đậm hơn
+      ctx.fillStyle = '#2980b9';
+      ctx.fillRect(left + 2, top + 14, this.width - 4, 6);
+    }
 
     // Khe mũ và cặp mắt xoay theo hướng facingX
     const visorX = this.facingX > 0 ? left + 7 : left + 3;
