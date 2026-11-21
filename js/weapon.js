@@ -60,7 +60,7 @@ export class AimSystem {
   }
 
   /**
-   * Vẽ khung khóa mục tiêu hoặc tâm ngắm chữ thập cùng nhãn chế độ ngắm hiện tại.
+   * Vẽ khung khóa mục tiêu hoặc tâm ngắm chữ thập theo chuột.
    * @param {CanvasRenderingContext2D} ctx
    * @param {{ x: number, y: number }} player
    */
@@ -70,8 +70,6 @@ export class AimSystem {
     } else {
       this.#drawCrosshair(ctx, this.mouseX, this.mouseY);
     }
-
-    this.#drawStatusBadge(ctx);
   }
 
   #bindEvents() {
@@ -172,36 +170,6 @@ export class AimSystem {
     ctx.fillRect(cx - 1, cy + 4, 2, 4);
     ctx.fillRect(cx - 8, cy - 1, 4, 2);
     ctx.fillRect(cx + 4, cy - 1, 4, 2);
-    ctx.restore();
-  }
-
-  #drawStatusBadge(ctx) {
-    const label = this.autoAim
-      ? 'Aim: AUTO-LOCK [Phím T: Ngắm chuột]'
-      : 'Aim: MOUSE [Phím T: Bật Auto-Aim]';
-
-    ctx.save();
-    ctx.font = 'bold 12px monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-
-    const textWidth = ctx.measureText
-      ? ctx.measureText(label).width
-      : label.length * 7;
-    const x = 10;
-    const y = 5;
-    const width = Math.ceil(textWidth) + 16;
-    const height = 22;
-
-    ctx.fillStyle = 'rgba(14, 16, 26, 0.78)';
-    ctx.fillRect(x, y, width, height);
-
-    ctx.strokeStyle = this.autoAim ? '#ff5252' : '#4fc3f7';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
-
-    ctx.fillStyle = this.autoAim ? '#ff8a80' : '#e0f7fa';
-    ctx.fillText(label, x + 8, y + height / 2);
     ctx.restore();
   }
 }
