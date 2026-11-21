@@ -207,7 +207,7 @@ export class AimSystem {
 }
 
 /**
- * Cấu hình 2 vũ khí đặc trưng của Soul Knight.
+ * Cấu hình các vũ khí trong game (khởi đầu và rơi từ Rương vũ khí).
  */
 export const WEAPONS = Object.freeze({
   pistol: Object.freeze({
@@ -238,6 +238,34 @@ export const WEAPONS = Object.freeze({
     bodyColor: '#8d6e63',
     barrelLength: 22,
   }),
+  smg: Object.freeze({
+    id: 'smg',
+    name: 'Tiểu Liên',
+    energyCost: 1,
+    fireRate: 0.11,
+    bulletCount: 1,
+    spread: 0.12,
+    bulletSpeed: 580,
+    bulletRadius: 3.5,
+    damage: 2,
+    bulletColor: '#4dd0e1',
+    bodyColor: '#546e7a',
+    barrelLength: 20,
+  }),
+  staff: Object.freeze({
+    id: 'staff',
+    name: 'Pháp Trượng',
+    energyCost: 4,
+    fireRate: 0.55,
+    bulletCount: 3,
+    spread: 0.28,
+    bulletSpeed: 450,
+    bulletRadius: 6,
+    damage: 5,
+    bulletColor: '#e040fb',
+    bodyColor: '#7b1fa2',
+    barrelLength: 24,
+  }),
 });
 
 /**
@@ -262,6 +290,45 @@ export class WeaponSystem {
    */
   getCurrentWeapon() {
     return this.weapons[this.currentIndex];
+  }
+
+  /**
+   * Kiểm tra xem người chơi có đang mang vũ khí có mã weaponId hay không.
+   * @param {string} weaponId
+   * @returns {boolean}
+   */
+  hasWeapon(weaponId) {
+    return this.weapons.some((weapon) => weapon && weapon.id === weaponId);
+  }
+
+  /**
+   * Thay thế khẩu súng ở ô đang cầm bằng newWeapon và trả về khẩu súng cũ.
+   * @param {object} newWeapon
+   * @returns {object | null}
+   */
+  swapCurrentWeapon(newWeapon) {
+    if (!newWeapon) {
+      return null;
+    }
+
+    const oldWeapon = this.weapons[this.currentIndex] ?? null;
+    this.weapons[this.currentIndex] = newWeapon;
+    this.cooldown = 0;
+    this.switchFlashTimer = 0.18;
+    this.outOfEnergyTimer = 0;
+    return oldWeapon;
+  }
+
+  /**
+   * Đưa kho vũ khí về mặc định ban đầu [Súng Lục, Shotgun], ô đang cầm = 0.
+   */
+  resetWeapons() {
+    this.weapons = [WEAPONS.pistol, WEAPONS.shotgun];
+    this.currentIndex = 0;
+    this.cooldown = 0;
+    this.outOfEnergyTimer = 0;
+    this.switchFlashTimer = 0;
+    this.recoilTimer = 0;
   }
 
   /**

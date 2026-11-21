@@ -129,6 +129,17 @@ export class Player {
   }
 
   /**
+   * Cộng thêm năng lượng cho người chơi (nhặt từ Ngọc năng lượng), không vượt quá maxEnergy.
+   * @param {number} amount
+   */
+  addEnergy(amount) {
+    if (amount <= 0) {
+      return;
+    }
+    this.energy = Math.min(this.maxEnergy, this.energy + amount);
+  }
+
+  /**
    * Khôi phục toàn bộ chỉ số và đặt lại các bộ đếm về trạng thái ban đầu.
    */
   resetStats() {
@@ -380,8 +391,49 @@ export class Player {
       ctx.fillRect(recoilOffset + 9, -3, weapon.barrelLength - 10, 1);
       ctx.fillStyle = '#6d4c41';
       ctx.fillRect(recoilOffset + 11, 1, 7, 2);
+    } else if (weapon.id === 'smg') {
+      // Tiểu Liên nhỏ gọn màu xám thép kèm băng đạn dọc và đầu nòng cyan
+      ctx.fillStyle = '#141824';
+      ctx.fillRect(recoilOffset + 2, -4, weapon.barrelLength, 6);
+      ctx.fillRect(recoilOffset + 9, 1, 4, 6);
+
+      ctx.fillStyle = weapon.bodyColor;
+      ctx.fillRect(recoilOffset + 3, -3, weapon.barrelLength - 3, 4);
+      ctx.fillStyle = '#90a4ae';
+      ctx.fillRect(recoilOffset + 4, -3, weapon.barrelLength - 6, 1);
+      ctx.fillStyle = '#37474f';
+      ctx.fillRect(recoilOffset + 10, 1, 2, 5);
+      ctx.fillStyle = weapon.bulletColor;
+      ctx.fillRect(recoilOffset + weapon.barrelLength - 2, -2, 2, 2);
+    } else if (weapon.id === 'staff') {
+      // Pháp Trượng tím có vòng vàng và viên ngọc ma thuật ở đầu nòng
+      const shaftLength = Math.max(12, weapon.barrelLength - 4);
+      ctx.fillStyle = '#141824';
+      ctx.fillRect(recoilOffset + 1, -3, shaftLength + 1, 5);
+
+      ctx.fillStyle = weapon.bodyColor;
+      ctx.fillRect(recoilOffset + 2, -2, shaftLength - 2, 3);
+      ctx.fillStyle = '#ce93d8';
+      ctx.fillRect(recoilOffset + 2, -2, shaftLength - 3, 1);
+
+      ctx.fillStyle = '#ffd54f';
+      ctx.fillRect(recoilOffset + shaftLength - 3, -3, 3, 5);
+
+      const orbX = recoilOffset + weapon.barrelLength - 1;
+      ctx.fillStyle = '#141824';
+      ctx.beginPath();
+      ctx.arc(orbX, -0.5, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = weapon.bulletColor;
+      ctx.beginPath();
+      ctx.arc(orbX, -0.5, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(orbX - 0.5, -1, 1.4, 0, Math.PI * 2);
+      ctx.fill();
     } else {
-      // Tay cầm và thân Súng Lục gọn màu xám bạc
+      // Tay cầm và thân vũ khí mặc định theo bodyColor & barrelLength
       ctx.fillStyle = '#4e342e';
       ctx.fillRect(recoilOffset + 4, 1, 4, 5);
 
@@ -432,10 +484,6 @@ export class Player {
         }
         if (e.code === 'KeyQ' && !e.repeat && this.hp > 0) {
           this.weaponSystem.switchWeapon();
-        }
-        // Phim test tam thoi o Chuong 4 de hoi nang luong, se bo khi co ngoc nang luong o Chuong 6
-        if (e.code === 'KeyR' && !e.repeat && this.hp > 0) {
-          this.energy = this.maxEnergy;
         }
       });
 

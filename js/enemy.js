@@ -74,6 +74,7 @@ export class Enemy {
 
     this.aimAngle = 0;
     this.chargeRatio = 0;
+    this.deathNotified = false;
     this.#onDeath = onDeath;
   }
 
@@ -402,31 +403,41 @@ export class Enemy {
 }
 
 /**
- * Quản lý bầy quái trong phòng, sinh đợt quái thử nghiệm và hiệu ứng hạt khi quái bị hạ.
+ * Quản lý bầy quái trong phòng, cảnh báo trước khi sinh đợt quái và hiệu ứng hạt khi quái bị hạ.
  */
 export class EnemyManager {
   constructor() {
     this.enemies = [];
+    this.pendingSpawns = [];
     this.deathParticles = [];
   }
 
   /**
-   * Sinh 5 quái (3 cận chiến + 2 đánh xa) tại các ô sàn trống cách player ít nhất 180px.
+   * Lên lịch sinh đợt quái gồm meleeCount quái cận chiến + rangedCount quái đánh xa với cảnh báo 0.85s.
    * @param {import('./map.js').DungeonMap} map
    * @param {{ x: number, y: number }} player
+   * @param {number} [meleeCount=2]
+   * @param {number} [rangedCount=1]
    */
-  spawnTestWave(map, player) {
-    this.enemies = [];
-    const waveTypes = ['melee', 'melee', 'melee', 'ranged', 'ranged'];
+  spawnWave(map, player, meleeCount = 2, rangedCount = 1) {
+    const waveTypes = [];
+    for (let i = 0; i < meleeCount; i++) {
+      waveTypes.push('melee');
+    }
+    for (let i = 0; i < rangedCount; i++) {
+      waveTypes.push('ranged');
+    }
 
     for (const type of waveTypes) {
       const pos = this.#findValidSpawnPoint(map, player);
       if (pos) {
-        this.enemies.push(
-          new Enemy(pos.x, pos.y, type, (deadEnemy) =>
-            this.#spawnDeathParticles(deadEnemy),
-          ),
-        );
+        this.pendingSpawns.push({
+          x: pos.x,
+          y: pos.y,
+          type,
+          timer: 0.85,
+          duration: 0.85,
+        });
       }
     }
   }
@@ -440,13 +451,59 @@ export class EnemyManager {
   }
 
   /**
-   * Cập nhật toàn bộ quái còn sống và hiệu ứng hạt khi quái chết.
+   * Kiểm tra xem vẫn còn quái sống hoặc còn quái đang chờ xuất hiện (pendingSpawns).
+   * @returns {boolean}
+   */
+  hasEnemiesOrPending() {
+    return (
+      this.pendingSpawns.length > 0 ||
+      this.enemies.some((enemy) => enemy.active)
+    );
+  }
+
+  /**
+   * Tổng số quái hiện còn (gồm đang sống và sắp xuất hiện).
+   * @returns {number}
+   */
+  getRemainingCount() {
+    return this.getActiveEnemies().length + this.pendingSpawns.length;
+  }
+
+  /**
+   * Xóa sạch toàn bộ quái, điểm cảnh báo và hạt vỡ tan khi chuyển phòng hoặc chơi lại.
+   */
+  clearAll() {
+    this.enemies = [];
+    this.pendingSpawns = [];
+    this.deathParticles = [];
+  }
+
+  /**
+   * Cập nhật hàng chờ cảnh báo sinh quái, toàn bộ quái còn sống và hiệu ứng hạt khi quái chết.
    * @param {number} dt
    * @param {import('./map.js').DungeonMap} map
    * @param {object} player
    * @param {import('./bullet.js').BulletManager} bulletManager
+   * @param {((enemy: Enemy) => void) | null} [onEnemyDeath=null]
    */
-  update(dt, map, player, bulletManager) {
+  update(dt, map, player, bulletManager, onEnemyDeath = null) {
+    if (dt > 0 && this.pendingSpawns.length > 0) {
+      const remainingPending = [];
+      for (const pending of this.pendingSpawns) {
+        pending.timer -= dt;
+        if (pending.timer <= 0) {
+          this.enemies.push(
+            new Enemy(pending.x, pending.y, pending.type, (deadEnemy) =>
+              this.#spawnDeathParticles(deadEnemy),
+            ),
+          );
+        } else {
+          remainingPending.push(pending);
+        }
+      }
+      this.pendingSpawns = remainingPending;
+    }
+
     const activeEnemies = this.getActiveEnemies();
 
     for (const enemy of activeEnemies) {
@@ -456,6 +513,10 @@ export class EnemyManager {
     for (const enemy of this.enemies) {
       if (!enemy.active) {
         enemy.markDeathHandled();
+        if (!enemy.deathNotified) {
+          enemy.deathNotified = true;
+          onEnemyDeath?.(enemy);
+        }
       }
     }
 
@@ -474,10 +535,12 @@ export class EnemyManager {
   }
 
   /**
-   * Vẽ toàn bộ quái còn sống và hạt hiệu ứng khi quái vỡ tan.
+   * Vẽ cảnh báo sắp sinh quái, toàn bộ quái còn sống và hạt hiệu ứng khi quái vỡ tan.
    * @param {CanvasRenderingContext2D} ctx
    */
   draw(ctx) {
+    this.#drawPendingSpawns(ctx);
+
     for (const enemy of this.enemies) {
       enemy.draw(ctx);
     }
@@ -497,6 +560,44 @@ export class EnemyManager {
         particle.size,
       );
     }
+    ctx.restore();
+  }
+
+  #drawPendingSpawns(ctx) {
+    if (this.pendingSpawns.length === 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (const pending of this.pendingSpawns) {
+      const progress = Math.max(
+        0,
+        Math.min(1, 1 - pending.timer / pending.duration),
+      );
+      const blink = Math.floor(pending.timer * 14) % 2 === 0;
+      const radius = 13 + Math.sin(progress * Math.PI) * 3;
+
+      ctx.fillStyle = blink
+        ? 'rgba(255, 59, 59, 0.25)'
+        : 'rgba(255, 59, 59, 0.12)';
+      ctx.beginPath();
+      ctx.arc(pending.x, pending.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = blink ? '#ff5252' : '#d32f2f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(pending.x, pending.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = blink ? '#ff8a80' : '#ff3b3b';
+      ctx.fillText('!', pending.x, pending.y + 1);
+    }
+
     ctx.restore();
   }
 
@@ -538,6 +639,11 @@ export class EnemyManager {
     }
     for (const existing of this.enemies) {
       if (Math.hypot(x - existing.x, y - existing.y) < 36) {
+        return false;
+      }
+    }
+    for (const pending of this.pendingSpawns) {
+      if (Math.hypot(x - pending.x, y - pending.y) < 36) {
         return false;
       }
     }
