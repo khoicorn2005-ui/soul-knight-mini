@@ -16,8 +16,9 @@ export class Bullet {
    * @param {number} damage
    * @param {string} color
    * @param {'player' | 'enemy'} [owner='player']
+   * @param {{ homing?: boolean, turnSpeed?: number, homingDuration?: number, speed?: number }} [options={}]
    */
-  constructor(x, y, vx, vy, radius, damage, color, owner = 'player') {
+  constructor(x, y, vx, vy, radius, damage, color, owner = 'player', options = {}) {
     this.x = x;
     this.y = y;
     this.vx = vx;
@@ -27,10 +28,15 @@ export class Bullet {
     this.color = color;
     this.owner = owner;
     this.active = true;
+
+    this.homing = Boolean(options?.homing);
+    this.turnSpeed = options?.turnSpeed || 1.6;
+    this.homingTimer = options?.homingDuration || 2.2;
+    this.speed = options?.speed ?? Math.hypot(vx, vy);
   }
 
   /**
-   * Di chuyển đạn theo vận tốc và kiểm tra va chạm tường/cột/thùng, biên canvas, quái hoặc người chơi.
+   * Di chuyển đạn theo vận tốc (hỗ trợ xoay dần nếu là đạn đuổi) và kiểm tra va chạm.
    * @param {number} dt
    * @param {import('./map.js').DungeonMap} map
    * @param {Array<object>} [enemies=[]]
@@ -46,6 +52,32 @@ export class Bullet {
     if (map && map.isSolidAt(this.x, this.y)) {
       this.active = false;
       return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
+    }
+
+    if (
+      this.owner === 'enemy' &&
+      this.homing &&
+      this.homingTimer > 0 &&
+      player &&
+      player.hp > 0
+    ) {
+      this.homingTimer = Math.max(0, this.homingTimer - dt);
+
+      const currentAngle = Math.atan2(this.vy, this.vx);
+      const targetAngle = Math.atan2(player.y - this.y, player.x - this.x);
+      let diff = targetAngle - currentAngle;
+      while (diff > Math.PI) {
+        diff -= Math.PI * 2;
+      }
+      while (diff < -Math.PI) {
+        diff += Math.PI * 2;
+      }
+
+      const maxTurn = this.turnSpeed * dt;
+      const clampedDiff = Math.max(-maxTurn, Math.min(maxTurn, diff));
+      const newAngle = currentAngle + clampedDiff;
+      this.vx = Math.cos(newAngle) * this.speed;
+      this.vy = Math.sin(newAngle) * this.speed;
     }
 
     const prevX = this.x;
@@ -105,7 +137,12 @@ export class Bullet {
         } else {
           player.triggerHitFlash?.();
         }
-        return { x: this.x, y: this.y, color: '#ff3b3b', isTargetHit: true };
+        return {
+          x: this.x,
+          y: this.y,
+          color: this.homing ? '#ff6d00' : '#ff3b3b',
+          isTargetHit: true,
+        };
       }
     }
 
@@ -140,11 +177,17 @@ export class BulletManager {
    * @param {number} radius
    * @param {string} color
    * @param {'player' | 'enemy'} [owner='player']
+   * @param {{ homing?: boolean, turnSpeed?: number, homingDuration?: number }} [options={}]
    */
-  spawn(x, y, angle, speed, damage, radius, color, owner = 'player') {
+  spawn(x, y, angle, speed, damage, radius, color, owner = 'player', options = {}) {
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed;
-    this.bullets.push(new Bullet(x, y, vx, vy, radius, damage, color, owner));
+    this.bullets.push(
+      new Bullet(x, y, vx, vy, radius, damage, color, owner, {
+        ...options,
+        speed,
+      }),
+    );
   }
 
   /**
@@ -187,7 +230,34 @@ export class BulletManager {
     ctx.save();
 
     for (const bullet of this.bullets) {
-      if (bullet.owner === 'enemy') {
+      if (bullet.owner === 'enemy' && bullet.homing) {
+        // Đạn đuổi: hào quang cam, viền tím đậm #6a1b9a, thân cam rực #ff6d00 và lõi vàng sáng
+        ctx.fillStyle = 'rgba(255, 109, 0, 0.28)';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius + 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#6a1b9a';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius + 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ff6d00';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffee58';
+        ctx.beginPath();
+        ctx.arc(
+          bullet.x,
+          bullet.y,
+          Math.max(2, bullet.radius * 0.48),
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      } else if (bullet.owner === 'enemy') {
         // Đạn phe quái: viền tối, thân đỏ tươi và lõi trắng sáng kiểu Soul Knight
         ctx.fillStyle = '#2b0909';
         ctx.beginPath();

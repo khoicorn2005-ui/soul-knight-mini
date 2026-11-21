@@ -4,6 +4,7 @@ import { AimSystem } from './weapon.js';
 import { BulletManager } from './bullet.js';
 import { EnemyManager } from './enemy.js';
 import { LootManager } from './loot.js';
+import { Boss } from './boss.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -32,7 +33,6 @@ const ROOM_CONFIGS = [
       { melee: 4, ranged: 3 },
     ],
   },
-  // Phòng 1-4 BOSS tạm thời ở Chặng 1 — sẽ triệu hồi Boss cuối ở Chặng 2
   {
     label: '1-4 BOSS',
     waves: [],
@@ -54,13 +54,17 @@ let roomBannerTimer = 0;
 let toastMessage = '';
 let toastTimer = 0;
 
+let boss = null;
+let isVictory = false;
+let victoryDelayTimer = 0;
+
 function showToast(message, duration = 2.0) {
   toastMessage = message;
   toastTimer = duration;
 }
 
 /**
- * Nạp bố cục phòng mới, đặt người chơi về điểm xuất phát và khởi động đợt quái đầu tiên.
+ * Nạp bố cục phòng mới, đặt người chơi về điểm xuất phát và khởi động quái hoặc Boss.
  * @param {number} roomIndex
  */
 function startRoom(roomIndex) {
@@ -69,6 +73,9 @@ function startRoom(roomIndex) {
 
   currentRoomIndex = safeIndex;
   currentWaveIndex = 0;
+  boss = null;
+  isVictory = false;
+  victoryDelayTimer = 0;
 
   map.loadRoom(safeIndex);
 
@@ -82,18 +89,20 @@ function startRoom(roomIndex) {
   enemyManager.clearAll();
   lootManager.clearAll();
 
-  roomBannerText = `PHÒNG ${roomConfig.label}`;
-  roomBannerTimer = 1.8;
+  if (safeIndex === 3) {
+    roomCleared = false;
+    map.isLocked = true;
+    boss = new Boss(720, 288);
+    roomBannerText = 'PHÒNG 1-4: VUA HẦM NGỤC';
+    roomBannerTimer = 2.0;
+  } else {
+    roomBannerText = `PHÒNG ${roomConfig.label}`;
+    roomBannerTimer = 1.8;
 
-  if (roomConfig.waves.length > 0) {
     roomCleared = false;
     map.isLocked = true;
     const firstWave = roomConfig.waves[0];
     enemyManager.spawnWave(map, player, firstWave.melee, firstWave.ranged);
-  } else {
-    // Tạm thời mở cửa ở phòng 1-4 BOSS trong Chặng 1; Chặng 2 sẽ khóa cửa và triệu hồi Boss tại đây
-    roomCleared = true;
-    map.isLocked = false;
   }
 }
 
@@ -101,7 +110,7 @@ startRoom(0);
 
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyE' && !e.repeat && player.hp > 0) {
+    if (e.code === 'KeyE' && !e.repeat && player.hp > 0 && !isVictory) {
       const result = lootManager.tryInteract(player);
       if (result) {
         if (result.type === 'portal') {
@@ -114,11 +123,7 @@ if (typeof window !== 'undefined') {
       }
     }
 
-    const isTempBossRoom =
-      currentRoomIndex === ROOM_CONFIGS.length - 1 &&
-      ROOM_CONFIGS[currentRoomIndex].waves.length === 0;
-
-    if (e.code === 'Enter' && !e.repeat && (player.hp <= 0 || isTempBossRoom)) {
+    if (e.code === 'Enter' && !e.repeat && (player.hp <= 0 || isVictory)) {
       player.resetStats();
       player.weaponSystem.resetWeapons();
       toastMessage = '';
@@ -131,7 +136,17 @@ if (typeof window !== 'undefined') {
 function drawRoomStatusBadge(ctx) {
   const roomConfig = ROOM_CONFIGS[currentRoomIndex];
   let label;
-  if (roomCleared) {
+  let clearedStyle = roomCleared;
+
+  if (currentRoomIndex === 3) {
+    if (boss && boss.active) {
+      label = 'Phòng 1-4 | BOSS';
+      clearedStyle = false;
+    } else {
+      label = 'Phòng 1-4 | ĐÃ HẠ BOSS';
+      clearedStyle = true;
+    }
+  } else if (roomCleared) {
     label = `Phòng ${roomConfig.label} | ĐÃ DỌN SẠCH`;
   } else {
     const totalWaves = roomConfig.waves.length;
@@ -154,12 +169,63 @@ function drawRoomStatusBadge(ctx) {
 
   ctx.fillStyle = 'rgba(14, 16, 26, 0.78)';
   ctx.fillRect(x, y, width, height);
-  ctx.strokeStyle = roomCleared ? '#66bb6a' : '#e53935';
+  ctx.strokeStyle = clearedStyle ? '#66bb6a' : '#e53935';
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
 
-  ctx.fillStyle = roomCleared ? '#c8e6c9' : '#ffcdd2';
+  ctx.fillStyle = clearedStyle ? '#c8e6c9' : '#ffcdd2';
   ctx.fillText(label, x + 8, y + height / 2);
+  ctx.restore();
+}
+
+function drawBossHealthBar(ctx, currentBoss) {
+  const barWidth = 360;
+  const barHeight = 16;
+  const barX = Math.round((canvas.width - barWidth) / 2);
+  const barY = 20;
+  const ratio = Math.max(0, Math.min(1, currentBoss.hp / currentBoss.maxHp));
+  const fillWidth = Math.round((barWidth - 4) * ratio);
+
+  const title = currentBoss.isEnraged
+    ? `${currentBoss.name} [CUỒNG NỘ]`
+    : currentBoss.name;
+
+  ctx.save();
+
+  // Tên Boss phía trên chính giữa thanh máu
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#0e101a';
+  ctx.fillText(title, canvas.width / 2 + 1, 11 + 1);
+  ctx.fillStyle = currentBoss.isEnraged ? '#ff8a80' : '#ffd54f';
+  ctx.fillText(title, canvas.width / 2, 11);
+
+  // Nền tối và dải máu đỏ rực của Boss
+  ctx.fillStyle = 'rgba(14, 16, 26, 0.88)';
+  ctx.fillRect(barX, barY, barWidth, barHeight);
+
+  if (fillWidth > 0) {
+    ctx.fillStyle = currentBoss.isEnraged ? '#ff1744' : '#d32f2f';
+    ctx.fillRect(barX + 2, barY + 2, fillWidth, barHeight - 4);
+    ctx.fillStyle = currentBoss.isEnraged ? '#ff8a80' : '#ef5350';
+    ctx.fillRect(barX + 2, barY + 2, fillWidth, 4);
+  }
+
+  // Viền vàng nổi bật
+  ctx.strokeStyle = '#ffd54f';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(barX + 1, barY + 1, barWidth - 2, barHeight - 2);
+
+  // Số máu hiện tại / tối đa
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(
+    `${currentBoss.hp} / ${currentBoss.maxHp}`,
+    canvas.width / 2,
+    barY + barHeight / 2 + 0.5,
+  );
+
   ctx.restore();
 }
 
@@ -207,7 +273,7 @@ function drawToastMessage(ctx) {
 
   const alpha = Math.min(1, toastTimer / 0.35);
   const centerX = canvas.width / 2;
-  const y = 44;
+  const y = 48;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -234,47 +300,6 @@ function drawToastMessage(ctx) {
 
   ctx.fillStyle = '#e0f7fa';
   ctx.fillText(toastMessage, centerX, y + 0.5);
-  ctx.restore();
-}
-
-// Thông báo tạm thời ở Đấu trường Boss (Chặng 1) — Chặng 2 sẽ thay bằng logic triệu hồi và chiến đấu Boss cuối
-function drawBossArenaPlaceholderNotice(ctx) {
-  const isTempBossRoom =
-    currentRoomIndex === ROOM_CONFIGS.length - 1 &&
-    ROOM_CONFIGS[currentRoomIndex].waves.length === 0;
-  if (!isTempBossRoom) {
-    return;
-  }
-
-  const msg =
-    'PHÒNG 1-4: ĐẤU TRƯỜNG BOSS (Sẽ triệu hồi Boss ở Chặng 2) — Nhấn ENTER để chơi lại từ 1-1';
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-
-  ctx.save();
-  ctx.font = 'bold 14px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const textWidth = ctx.measureText
-    ? ctx.measureText(msg).width
-    : msg.length * 8.5;
-  const boxW = Math.ceil(textWidth) + 30;
-  const boxH = 38;
-
-  ctx.fillStyle = 'rgba(14, 16, 26, 0.84)';
-  ctx.fillRect(centerX - boxW / 2, centerY - boxH / 2, boxW, boxH);
-  ctx.strokeStyle = '#ab47bc';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(
-    centerX - boxW / 2 + 0.5,
-    centerY - boxH / 2 + 0.5,
-    boxW - 1,
-    boxH - 1,
-  );
-
-  ctx.fillStyle = '#f3e5f5';
-  ctx.fillText(msg, centerX, centerY + 0.5);
   ctx.restore();
 }
 
@@ -448,6 +473,35 @@ function drawDownedOverlay(ctx) {
   ctx.restore();
 }
 
+// Man hinh Chien thang tam thoi o Chuong 6, se nang cap thanh luong UI day du o Chuong 7
+function drawVictoryOverlay(ctx) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.76)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.font = 'bold 38px monospace';
+  ctx.fillStyle = '#141824';
+  ctx.fillText('CHIẾN THẮNG!', centerX + 3, centerY - 36 + 3);
+  ctx.fillStyle = '#ffd54f';
+  ctx.fillText('CHIẾN THẮNG!', centerX, centerY - 36);
+
+  ctx.font = 'bold 18px monospace';
+  ctx.fillStyle = '#e0f7fa';
+  ctx.fillText('Bạn đã hạ gục Vua Hầm Ngục!', centerX, centerY + 8);
+
+  ctx.font = 'bold 14px monospace';
+  ctx.fillStyle = '#a5d6a7';
+  ctx.fillText('Nhấn ENTER để chơi lại từ Phòng 1-1', centerX, centerY + 46);
+
+  ctx.restore();
+}
+
 let lastTime = null;
 
 function gameLoop(timestamp) {
@@ -458,20 +512,47 @@ function gameLoop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
-  if (player.hp > 0) {
+  if (player.hp > 0 && !isVictory) {
     roomBannerTimer = Math.max(0, roomBannerTimer - dt);
     toastTimer = Math.max(0, toastTimer - dt);
 
     player.update(dt, map, bulletManager);
-    const activeEnemies = enemyManager.getActiveEnemies();
-    aimSystem.update(player, activeEnemies);
+
+    const activeTargets = [...enemyManager.getActiveEnemies()];
+    if (boss && boss.active) {
+      activeTargets.push(boss);
+    }
+
+    aimSystem.update(player, activeTargets);
     player.aimAngle = aimSystem.aimAngle;
 
-    bulletManager.update(dt, map, activeEnemies, player);
+    bulletManager.update(dt, map, activeTargets, player);
     enemyManager.update(dt, map, player, bulletManager, (deadEnemy) => {
       const orbCount = Math.random() < 0.5 ? 2 : 3;
       lootManager.spawnEnergyOrbs(deadEnemy.x, deadEnemy.y, orbCount);
     });
+
+    if (boss !== null) {
+      boss.update(dt, map, player, bulletManager, (x, y, count) => {
+        lootManager.spawnEnergyOrbs(x, y, count);
+      });
+
+      if (!boss.active && !isVictory) {
+        if (!roomCleared) {
+          roomCleared = true;
+          map.isLocked = false;
+          bulletManager.bullets = bulletManager.bullets.filter(
+            (bullet) => bullet.owner !== 'enemy',
+          );
+        }
+        victoryDelayTimer += dt;
+        if (victoryDelayTimer >= 1.1) {
+          isVictory = true;
+          player.isFiring = false;
+        }
+      }
+    }
+
     lootManager.update(dt, player);
 
     const roomConfig = ROOM_CONFIGS[currentRoomIndex];
@@ -497,17 +578,24 @@ function gameLoop(timestamp) {
   map.draw(ctx);
   lootManager.draw(ctx, player);
   enemyManager.draw(ctx);
+  if (boss) {
+    boss.draw(ctx);
+  }
   bulletManager.draw(ctx);
   player.draw(ctx);
   aimSystem.draw(ctx, player);
   drawHud(ctx, player);
   drawRoomStatusBadge(ctx);
-  drawBossArenaPlaceholderNotice(ctx);
+  if (boss && boss.active) {
+    drawBossHealthBar(ctx, boss);
+  }
   drawRoomBanner(ctx);
   drawToastMessage(ctx);
 
   if (player.hp <= 0) {
     drawDownedOverlay(ctx);
+  } else if (isVictory) {
+    drawVictoryOverlay(ctx);
   }
 
   requestAnimationFrame(gameLoop);
