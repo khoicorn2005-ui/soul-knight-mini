@@ -2,6 +2,7 @@
 
 import { assets } from './assets.js';
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 const ENEMY_CONFIG = Object.freeze({
   melee: Object.freeze({
@@ -116,6 +117,7 @@ export class Enemy {
     }
     this.#deathHandled = true;
     audioManager.play('explosion', { volume: 0.4, pitch: 1.25 });
+    vfxManager.addShake(2.2, 0.08);
     this.#onDeath?.(this);
     return true;
   }

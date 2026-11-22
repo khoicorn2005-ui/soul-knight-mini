@@ -8,6 +8,7 @@ import { Boss } from './boss.js';
 import { GameHUD, ScreenManager } from './ui.js';
 import { assets } from './assets.js';
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -131,6 +132,7 @@ function startRoom(roomIndex) {
   bulletManager.clear();
   enemyManager.clearAll();
   lootManager.clearAll();
+  vfxManager.clear();
 
   if (safeIndex === 3) {
     roomCleared = false;
@@ -166,6 +168,7 @@ function startNewGame() {
   toastTimer = 0;
 
   startRoom(0);
+  vfxManager.clear();
 
   gameState = GAME_STATES.PLAYING;
   lastTime = performance.now();
@@ -196,6 +199,7 @@ function openMainMenu() {
   bulletManager.clear();
   enemyManager.clearAll();
   lootManager.clearAll();
+  vfxManager.clear();
 
   gameState = GAME_STATES.MENU;
   screenManager.showScreen(GAME_STATES.MENU);
@@ -363,6 +367,7 @@ function gameLoop(timestamp) {
     }
 
     lootManager.update(dt, player);
+    vfxManager.update(dt);
 
     const roomConfig = ROOM_CONFIGS[currentRoomIndex];
     if (
@@ -408,9 +413,18 @@ function gameLoop(timestamp) {
   }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  map.draw(ctx);
+  ctx.fillStyle = '#121218';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  if (gameState !== GAME_STATES.MENU) {
+  if (gameState === GAME_STATES.MENU) {
+    map.draw(ctx);
+  } else {
+    const shake = vfxManager.getShakeOffset();
+
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
+
+    map.draw(ctx);
     lootManager.draw(ctx, player);
     enemyManager.draw(ctx);
     if (boss) {
@@ -418,11 +432,15 @@ function gameLoop(timestamp) {
     }
     bulletManager.draw(ctx);
     player.draw(ctx);
+    vfxManager.drawWorld(ctx);
 
     if (gameState === GAME_STATES.PLAYING) {
       aimSystem.draw(ctx, player);
     }
 
+    ctx.restore();
+
+    vfxManager.drawScreenOverlay(ctx, canvas.width, canvas.height);
     hud.draw(ctx, {
       player,
       aimSystem,

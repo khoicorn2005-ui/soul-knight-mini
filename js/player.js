@@ -3,6 +3,7 @@
 import { WeaponSystem, drawPixelWeapon } from './weapon.js';
 import { assets } from './assets.js';
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 const MOVEMENT_CODES = new Set([
   'KeyW',
@@ -122,6 +123,7 @@ export class Player {
     }
 
     const hadShield = this.shield > 0;
+    const prevHp = this.hp;
 
     if (this.shield >= amount) {
       this.shield -= amount;
@@ -133,8 +135,30 @@ export class Player {
 
     if (hadShield && this.shield === 0) {
       audioManager.play('hurt', { volume: 0.65, pitch: 0.72 });
+      vfxManager.addShake(7, 0.22);
+      vfxManager.spawnBurst(this.x, this.y, '#81d4fa', 14, 170, 0.4);
+      vfxManager.spawnFloatingText(
+        this.x,
+        this.y - 24,
+        'VỠ GIÁP!',
+        '#81d4fa',
+        13,
+      );
+      vfxManager.triggerDamageFlash('rgba(129, 212, 250, 0.35)', 0.25);
+    } else if (this.hp < prevHp) {
+      audioManager.play('hurt', { volume: 0.45, pitch: 1.0 });
+      vfxManager.addShake(6, 0.18);
+      vfxManager.spawnFloatingText(
+        this.x,
+        this.y - 22,
+        `-${amount}`,
+        '#ef5350',
+        14,
+      );
+      vfxManager.triggerDamageFlash('rgba(239, 83, 80, 0.42)', 0.25);
     } else {
       audioManager.play('hurt', { volume: 0.45, pitch: 1.0 });
+      vfxManager.addShake(3, 0.1);
     }
 
     this.invulnerableTimer = 0.6;
@@ -182,6 +206,7 @@ export class Player {
     this.isMoving = false;
     this.weaponSystem.cooldown = 0;
     this.weaponSystem.outOfEnergyTimer = 0;
+    this.weaponSystem.recoilOffset = 0;
   }
 
   /**
@@ -231,6 +256,13 @@ export class Player {
           this.shieldRegenTick -= 1.0;
           this.shieldRegenFlash = 0.25;
           audioManager.play('pickup', { volume: 0.22, pitch: 1.45 });
+          vfxManager.spawnFloatingText(
+            this.x,
+            this.y - 22,
+            '+1 SH',
+            '#81d4fa',
+            11,
+          );
         }
         if (this.shield >= this.maxShield) {
           this.shieldRegenTick = 0;
@@ -442,6 +474,11 @@ export class Player {
       ctx.scale(1, -1);
     }
 
+    const recoilOffset = this.weaponSystem.recoilOffset ?? 0;
+    if (recoilOffset > 0) {
+      ctx.translate(-recoilOffset, 0);
+    }
+
     drawPixelWeapon(ctx, weapon, assets);
     ctx.restore();
   }
@@ -559,6 +596,7 @@ export class Player {
     this.dashTimer = this.dashDuration;
     this.dashCooldown = this.dashMaxCooldown;
     audioManager.play('dash', { volume: 0.45 });
+    vfxManager.spawnBurst(this.x, this.y + 10, '#cfd8dc', 6, 85, 0.25);
     this.dashTrail.push({
       x: this.x,
       y: this.y,

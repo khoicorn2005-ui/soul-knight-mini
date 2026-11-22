@@ -3,6 +3,7 @@
 import { WEAPONS } from './weapon.js';
 import { assets } from './assets.js';
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 const ROOM_INNER_MIN_X = 38;
 const ROOM_INNER_MAX_X = 960 - 38;
@@ -182,6 +183,13 @@ export class EnergyOrb {
         }
         this.active = false;
         audioManager.play('pickup', { volume: 0.35, pitch: 1.1, minInterval: 0.04 });
+        vfxManager.spawnFloatingText(
+          player.x,
+          player.y - 20,
+          '+8 EN',
+          '#4fc3f7',
+          11,
+        );
         return true;
       }
 

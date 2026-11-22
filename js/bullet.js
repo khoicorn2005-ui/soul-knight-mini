@@ -1,6 +1,7 @@
 // Quản lý đạn của người chơi và kẻ địch, chuyển động và xử lý va chạm.
 
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 const CANVAS_WIDTH = 960;
 const CANVAS_HEIGHT = 576;
@@ -131,6 +132,14 @@ export class Bullet {
             enemy.hitFlashTimer = 0.12;
           }
           audioManager.play('hit', { volume: 0.35, pitch: 1.15, minInterval: 0.04 });
+          vfxManager.spawnFloatingText(
+            enemy.x,
+            enemy.y - 18,
+            `-${this.damage}`,
+            this.damage >= 4 ? '#ffd54f' : '#ffffff',
+            this.damage >= 4 ? 14 : 12,
+          );
+          vfxManager.spawnBurst(this.x, this.y, this.color, 4, 90, 0.18);
           return { x: this.x, y: this.y, color: this.color, isTargetHit: true };
         }
       }

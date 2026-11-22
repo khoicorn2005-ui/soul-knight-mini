@@ -2,6 +2,7 @@
 
 import { assets } from './assets.js';
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 const BOSS_ATTACKS = ['ring', 'homing', 'charge'];
 
@@ -120,6 +121,15 @@ export class Boss {
       this.isEnraged = true;
       if (this.hp > 0) {
         audioManager.play('hurt', { volume: 0.5, pitch: 0.65, minInterval: 0 });
+        vfxManager.addShake(8, 0.35);
+        vfxManager.spawnBurst(this.x, this.y, '#ff1744', 20, 210, 0.5);
+        vfxManager.spawnFloatingText(
+          this.x,
+          this.y - 36,
+          'CUỒNG NỘ!',
+          '#ff5252',
+          16,
+        );
       }
     }
 
@@ -139,6 +149,7 @@ export class Boss {
       this.active = false;
       this.chargeTrail = [];
       audioManager.play('explosion', { volume: 0.75, pitch: 0.75, minInterval: 0 });
+      vfxManager.addShake(11, 0.45);
       this.#spawnDeathExplosion();
     }
   }
@@ -420,6 +431,10 @@ export class Boss {
 
       this.chargeTimer -= dt;
       if (hitWall || this.chargeTimer <= 0) {
+        if (hitWall) {
+          vfxManager.addShake(6.5, 0.2);
+          vfxManager.spawnBurst(this.x, this.y, '#ffab40', 12, 160, 0.35);
+        }
         this.#fireChargeBurst(bulletManager);
         this.#enterIdleState();
       }

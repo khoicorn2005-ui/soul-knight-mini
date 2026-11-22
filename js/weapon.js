@@ -1,6 +1,7 @@
 // Quản lý vũ khí, ngắm bắn, tiêu hao năng lượng và chuyển đổi giữa 2 vũ khí.
 
 import { audioManager } from './audio.js';
+import { vfxManager } from './vfx.js';
 
 /**
  * Hệ thống ngắm bắn hỗ trợ ngắm chuột thủ công và tự khóa mục tiêu gần nhất (Auto-Aim).
@@ -252,6 +253,7 @@ export class WeaponSystem {
     this.outOfEnergyTimer = 0;
     this.switchFlashTimer = 0;
     this.recoilTimer = 0;
+    this.recoilOffset = 0;
   }
 
   /**
@@ -286,6 +288,7 @@ export class WeaponSystem {
     this.cooldown = 0;
     this.switchFlashTimer = 0.18;
     this.outOfEnergyTimer = 0;
+    this.recoilOffset = 0;
     return oldWeapon;
   }
 
@@ -299,6 +302,7 @@ export class WeaponSystem {
     this.outOfEnergyTimer = 0;
     this.switchFlashTimer = 0;
     this.recoilTimer = 0;
+    this.recoilOffset = 0;
   }
 
   /**
@@ -327,6 +331,7 @@ export class WeaponSystem {
     this.outOfEnergyTimer = Math.max(0, this.outOfEnergyTimer - dt);
     this.switchFlashTimer = Math.max(0, this.switchFlashTimer - dt);
     this.recoilTimer = Math.max(0, this.recoilTimer - dt);
+    this.recoilOffset = Math.max(0, this.recoilOffset - 45 * dt);
   }
 
   /**
@@ -387,12 +392,24 @@ export class WeaponSystem {
     }
 
     if (weapon.id === 'pistol') {
+      this.recoilOffset = 4;
+      vfxManager.spawnMuzzleFlash(muzzleX, muzzleY, aimAngle, '#fff59d', 9);
+      vfxManager.addShake(1.2, 0.06);
       audioManager.play('shoot', { volume: 0.4, pitch: 1.0 });
     } else if (weapon.id === 'smg') {
+      this.recoilOffset = 3;
+      vfxManager.spawnMuzzleFlash(muzzleX, muzzleY, aimAngle, '#80deea', 8);
+      vfxManager.addShake(1.0, 0.05);
       audioManager.play('shoot', { volume: 0.32, pitch: 1.22, minInterval: 0.04 });
     } else if (weapon.id === 'shotgun') {
+      this.recoilOffset = 7.5;
+      vfxManager.spawnMuzzleFlash(muzzleX, muzzleY, aimAngle, '#ffb74d', 15);
+      vfxManager.addShake(4.2, 0.12);
       audioManager.play('shotgun', { volume: 0.55, pitch: 0.92 });
     } else if (weapon.id === 'staff') {
+      this.recoilOffset = 5;
+      vfxManager.spawnMuzzleFlash(muzzleX, muzzleY, aimAngle, '#ea80fc', 13);
+      vfxManager.addShake(2.5, 0.09);
       audioManager.play('shotgun', { volume: 0.45, pitch: 1.35 });
     }
 
