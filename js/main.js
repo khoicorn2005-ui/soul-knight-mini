@@ -7,6 +7,7 @@ import { LootManager } from './loot.js';
 import { Boss } from './boss.js';
 import { GameHUD, ScreenManager } from './ui.js';
 import { assets } from './assets.js';
+import { audioManager } from './audio.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -219,6 +220,29 @@ function togglePause() {
 
 player.inputEnabled = false;
 
+const muteBtn =
+  typeof document !== 'undefined' ? document.getElementById('btn-mute') : null;
+
+function updateMuteButton() {
+  if (!muteBtn) {
+    return;
+  }
+  const muted = audioManager.getMuted();
+  muteBtn.textContent = muted ? '🔇 [M]' : '🔊 [M]';
+  muteBtn.classList.toggle('muted', muted);
+}
+
+updateMuteButton();
+
+if (muteBtn) {
+  muteBtn.addEventListener('click', () => {
+    audioManager.unlock();
+    audioManager.toggleMute();
+    updateMuteButton();
+    muteBtn.blur();
+  });
+}
+
 if (typeof window !== 'undefined') {
   // Chặn các phím gameplay (Space, Q, E, T) ở pha capture khi không ở trạng thái PLAYING
   window.addEventListener(
@@ -236,6 +260,14 @@ if (typeof window !== 'undefined') {
   );
 
   window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyM' && !e.repeat) {
+      e.preventDefault();
+      audioManager.unlock();
+      audioManager.toggleMute();
+      updateMuteButton();
+      return;
+    }
+
     if (e.code === 'Escape' && !e.repeat) {
       if (
         gameState === GAME_STATES.PLAYING ||
@@ -355,6 +387,7 @@ function gameLoop(timestamp) {
       player.resetInputs();
       player.inputEnabled = false;
       gameState = GAME_STATES.GAME_OVER;
+      audioManager.play('hurt', { volume: 0.6, pitch: 0.6, minInterval: 0 });
       screenManager.showScreen(GAME_STATES.GAME_OVER, {
         roomLabel: ROOM_CONFIGS[currentRoomIndex].label,
         kills: enemiesDefeated,
@@ -364,6 +397,7 @@ function gameLoop(timestamp) {
       player.resetInputs();
       player.inputEnabled = false;
       gameState = GAME_STATES.VICTORY;
+      audioManager.play('chest', { volume: 0.6, pitch: 1.35, minInterval: 0 });
       screenManager.showScreen(GAME_STATES.VICTORY, {
         time: runTime,
         kills: enemiesDefeated,
@@ -423,7 +457,7 @@ function drawLoadingScreen() {
 async function init() {
   screenManager.showScreen(GAME_STATES.PLAYING);
   drawLoadingScreen();
-  await assets.loadAll();
+  await Promise.all([assets.loadAll(), audioManager.loadAll()]);
   openMainMenu();
   requestAnimationFrame(gameLoop);
   console.log('Game loop initialized');

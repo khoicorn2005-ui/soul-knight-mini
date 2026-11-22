@@ -1,6 +1,7 @@
 // Quản lý kẻ địch thường, Boss, hành vi chiến đấu và vật phẩm rơi ra.
 
 import { assets } from './assets.js';
+import { audioManager } from './audio.js';
 
 const ENEMY_CONFIG = Object.freeze({
   melee: Object.freeze({
@@ -114,6 +115,7 @@ export class Enemy {
       return false;
     }
     this.#deathHandled = true;
+    audioManager.play('explosion', { volume: 0.4, pitch: 1.25 });
     this.#onDeath?.(this);
     return true;
   }

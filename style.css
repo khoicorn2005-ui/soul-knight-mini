@@ -30,14 +30,47 @@ body {
   image-rendering: pixelated;
 }
 
+.bottom-bar {
+  width: 960px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .controls-hint {
   margin: 0;
   background: transparent;
   color: #a8b0c4;
   font-family: monospace;
   font-size: 12px;
-  text-align: center;
+  text-align: left;
   user-select: none;
+}
+
+.mute-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e8ecf5;
+  background: #1c2133;
+  border: 1px solid #4a5373;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.mute-btn:hover {
+  background: #28304a;
+  border-color: #80d8ff;
+}
+
+.mute-btn.muted {
+  color: #ff8a80;
+  background: #26161c;
+  border-color: #c62828;
 }
 
 .hidden {

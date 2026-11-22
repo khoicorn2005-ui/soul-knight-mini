@@ -1,6 +1,7 @@
 // Quản lý Boss cuối "VUA HẦM NGỤC" tại phòng 1-4 với 3 chiêu thức luân phiên và Phase 2 cuồng nộ.
 
 import { assets } from './assets.js';
+import { audioManager } from './audio.js';
 
 const BOSS_ATTACKS = ['ring', 'homing', 'charge'];
 
@@ -117,6 +118,9 @@ export class Boss {
 
     if (!this.isEnraged && this.hp <= this.maxHp * 0.5) {
       this.isEnraged = true;
+      if (this.hp > 0) {
+        audioManager.play('hurt', { volume: 0.5, pitch: 0.65, minInterval: 0 });
+      }
     }
 
     while (
@@ -134,6 +138,7 @@ export class Boss {
     if (this.hp <= 0) {
       this.active = false;
       this.chargeTrail = [];
+      audioManager.play('explosion', { volume: 0.75, pitch: 0.75, minInterval: 0 });
       this.#spawnDeathExplosion();
     }
   }
@@ -382,6 +387,7 @@ export class Boss {
       this.#enterIdleState();
     } else if (this.currentAttack === 'charge') {
       this.chargeTimer = 0.55;
+      audioManager.play('hurt', { volume: 0.5, pitch: 0.65 });
     }
     void map;
   }

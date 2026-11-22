@@ -2,6 +2,7 @@
 
 import { WeaponSystem, drawPixelWeapon } from './weapon.js';
 import { assets } from './assets.js';
+import { audioManager } from './audio.js';
 
 const MOVEMENT_CODES = new Set([
   'KeyW',
@@ -120,12 +121,20 @@ export class Player {
       return false;
     }
 
+    const hadShield = this.shield > 0;
+
     if (this.shield >= amount) {
       this.shield -= amount;
     } else {
       const overflow = amount - this.shield;
       this.shield = 0;
       this.hp = Math.max(0, this.hp - overflow);
+    }
+
+    if (hadShield && this.shield === 0) {
+      audioManager.play('hurt', { volume: 0.65, pitch: 0.72 });
+    } else {
+      audioManager.play('hurt', { volume: 0.45, pitch: 1.0 });
     }
 
     this.invulnerableTimer = 0.6;
@@ -221,6 +230,7 @@ export class Player {
           this.shield = Math.min(this.maxShield, this.shield + 1);
           this.shieldRegenTick -= 1.0;
           this.shieldRegenFlash = 0.25;
+          audioManager.play('pickup', { volume: 0.22, pitch: 1.45 });
         }
         if (this.shield >= this.maxShield) {
           this.shieldRegenTick = 0;
@@ -548,6 +558,7 @@ export class Player {
     this.isDashing = true;
     this.dashTimer = this.dashDuration;
     this.dashCooldown = this.dashMaxCooldown;
+    audioManager.play('dash', { volume: 0.45 });
     this.dashTrail.push({
       x: this.x,
       y: this.y,

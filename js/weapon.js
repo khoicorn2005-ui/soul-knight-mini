@@ -1,5 +1,7 @@
 // Quản lý vũ khí, ngắm bắn, tiêu hao năng lượng và chuyển đổi giữa 2 vũ khí.
 
+import { audioManager } from './audio.js';
+
 /**
  * Hệ thống ngắm bắn hỗ trợ ngắm chuột thủ công và tự khóa mục tiêu gần nhất (Auto-Aim).
  */
@@ -382,6 +384,16 @@ export class WeaponSystem {
         weapon.bulletRadius,
         weapon.bulletColor,
       );
+    }
+
+    if (weapon.id === 'pistol') {
+      audioManager.play('shoot', { volume: 0.4, pitch: 1.0 });
+    } else if (weapon.id === 'smg') {
+      audioManager.play('shoot', { volume: 0.32, pitch: 1.22, minInterval: 0.04 });
+    } else if (weapon.id === 'shotgun') {
+      audioManager.play('shotgun', { volume: 0.55, pitch: 0.92 });
+    } else if (weapon.id === 'staff') {
+      audioManager.play('shotgun', { volume: 0.45, pitch: 1.35 });
     }
 
     return true;

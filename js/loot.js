@@ -2,6 +2,7 @@
 
 import { WEAPONS } from './weapon.js';
 import { assets } from './assets.js';
+import { audioManager } from './audio.js';
 
 const ROOM_INNER_MIN_X = 38;
 const ROOM_INNER_MAX_X = 960 - 38;
@@ -180,6 +181,7 @@ export class EnergyOrb {
           );
         }
         this.active = false;
+        audioManager.play('pickup', { volume: 0.35, pitch: 1.1, minInterval: 0.04 });
         return true;
       }
 
@@ -297,6 +299,7 @@ export class WeaponChest {
       const pool = unowned.length > 0 ? unowned : candidates;
       this.weapon = pool[Math.floor(Math.random() * pool.length)];
       this.state = 'opened';
+      audioManager.play('chest', { volume: 0.5, pitch: 1.0 });
 
       return {
         type: 'chest_open',
@@ -309,6 +312,7 @@ export class WeaponChest {
       const equippedWeapon = this.weapon;
       const oldWeapon = player.weaponSystem.swapCurrentWeapon(equippedWeapon);
       this.weapon = oldWeapon;
+      audioManager.play('chest', { volume: 0.5, pitch: 1.0 });
 
       return {
         type: 'weapon_swap',
@@ -583,6 +587,7 @@ export class LootManager {
    */
   tryInteract(player) {
     if (this.portal && this.portal.isPlayerInRange(player)) {
+      audioManager.play('chest', { volume: 0.55, pitch: 1.28 });
       return {
         type: 'portal',
         nextRoomLabel: this.portal.nextRoomLabel,

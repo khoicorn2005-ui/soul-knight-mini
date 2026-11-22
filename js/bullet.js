@@ -1,5 +1,7 @@
 // Quản lý đạn của người chơi và kẻ địch, chuyển động và xử lý va chạm.
 
+import { audioManager } from './audio.js';
+
 const CANVAS_WIDTH = 960;
 const CANVAS_HEIGHT = 576;
 
@@ -51,6 +53,9 @@ export class Bullet {
     // Kiểm tra ngay điểm xuất phát đề phòng đầu nòng súng/trượng sát tường hoặc vật cản
     if (map && map.isSolidAt(this.x, this.y)) {
       this.active = false;
+      if (this.owner === 'player') {
+        audioManager.play('hit', { volume: 0.22, pitch: 0.8, minInterval: 0.05 });
+      }
       return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
     }
 
@@ -91,6 +96,9 @@ export class Bullet {
     const midY = (prevY + this.y) / 2;
     if (map && map.isSolidAt(midX, midY)) {
       this.active = false;
+      if (this.owner === 'player') {
+        audioManager.play('hit', { volume: 0.22, pitch: 0.8, minInterval: 0.05 });
+      }
       return { x: midX, y: midY, color: this.color, isTargetHit: false };
     }
 
@@ -102,6 +110,9 @@ export class Bullet {
       this.y > CANVAS_HEIGHT
     ) {
       this.active = false;
+      if (this.owner === 'player' && map && map.isSolidAt(this.x, this.y)) {
+        audioManager.play('hit', { volume: 0.22, pitch: 0.8, minInterval: 0.05 });
+      }
       return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
     }
 
@@ -119,6 +130,7 @@ export class Bullet {
           } else {
             enemy.hitFlashTimer = 0.12;
           }
+          audioManager.play('hit', { volume: 0.35, pitch: 1.15, minInterval: 0.04 });
           return { x: this.x, y: this.y, color: this.color, isTargetHit: true };
         }
       }
