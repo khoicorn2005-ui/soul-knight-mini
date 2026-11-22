@@ -133,6 +133,7 @@ function startRoom(roomIndex) {
   enemyManager.clearAll();
   lootManager.clearAll();
   vfxManager.clear();
+  aimSystem.lockedTarget = null;
 
   if (safeIndex === 3) {
     roomCleared = false;
@@ -159,6 +160,7 @@ function startNewGame() {
   player.resetInputs();
   player.weaponSystem.resetWeapons();
   player.inputEnabled = true;
+  aimSystem.lockedTarget = null;
 
   runTime = 0;
   enemiesDefeated = 0;
@@ -179,9 +181,15 @@ function startNewGame() {
  * Quay lại Start Menu và dựng sẵn nền phòng hầm ngục sạch đẹp phía sau.
  */
 function openMainMenu() {
+  player.resetStats();
   player.resetInputs();
+  player.weaponSystem.resetWeapons();
+  player.x = 128;
+  player.y = 288;
   player.inputEnabled = false;
 
+  runTime = 0;
+  enemiesDefeated = 0;
   currentRoomIndex = 0;
   currentWaveIndex = 0;
   roomCleared = false;
@@ -200,9 +208,23 @@ function openMainMenu() {
   enemyManager.clearAll();
   lootManager.clearAll();
   vfxManager.clear();
+  aimSystem.lockedTarget = null;
 
   gameState = GAME_STATES.MENU;
   screenManager.showScreen(GAME_STATES.MENU);
+}
+
+/**
+ * Tự động tạm dừng khi người chơi chuyển tab hoặc rời focus cửa sổ lúc đang chơi.
+ */
+function autoPauseIfPlaying() {
+  if (gameState !== GAME_STATES.PLAYING) {
+    return;
+  }
+  player.resetInputs();
+  player.inputEnabled = false;
+  gameState = GAME_STATES.PAUSED;
+  screenManager.showScreen(GAME_STATES.PAUSED);
 }
 
 /**
@@ -210,10 +232,7 @@ function openMainMenu() {
  */
 function togglePause() {
   if (gameState === GAME_STATES.PLAYING) {
-    player.resetInputs();
-    player.inputEnabled = false;
-    gameState = GAME_STATES.PAUSED;
-    screenManager.showScreen(GAME_STATES.PAUSED);
+    autoPauseIfPlaying();
   } else if (gameState === GAME_STATES.PAUSED) {
     player.inputEnabled = true;
     gameState = GAME_STATES.PLAYING;
@@ -223,6 +242,18 @@ function togglePause() {
 }
 
 player.inputEnabled = false;
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      autoPauseIfPlaying();
+    }
+  });
+}
 
 const muteBtn =
   typeof document !== 'undefined' ? document.getElementById('btn-mute') : null;
@@ -248,6 +279,8 @@ if (muteBtn) {
 }
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('blur', autoPauseIfPlaying);
+
   // Chặn các phím gameplay (Space, Q, E, T) ở pha capture khi không ở trạng thái PLAYING
   window.addEventListener(
     'keydown',
@@ -478,7 +511,6 @@ async function init() {
   await Promise.all([assets.loadAll(), audioManager.loadAll()]);
   openMainMenu();
   requestAnimationFrame(gameLoop);
-  console.log('Game loop initialized');
 }
 
 init();

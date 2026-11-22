@@ -139,7 +139,7 @@ export class Boss {
     ) {
       this.nextMilestoneIndex += 1;
       if (this.#onDropEnergy) {
-        this.#onDropEnergy(this.x, this.y, 3);
+        this.#onDropEnergy(this.x, this.y, 4);
       } else {
         this.pendingEnergyDrops += 1;
       }
@@ -169,7 +169,7 @@ export class Boss {
 
     while (this.pendingEnergyDrops > 0 && this.#onDropEnergy) {
       this.pendingEnergyDrops -= 1;
-      this.#onDropEnergy(this.x, this.y, 3);
+      this.#onDropEnergy(this.x, this.y, 4);
     }
 
     if (dt > 0) {
@@ -215,6 +215,10 @@ export class Boss {
     } else if (this.state === 'attack') {
       this.#updateAttack(dt, map, bulletManager);
     }
+
+    // Chốt tọa độ Boss trong vùng sàn chơi an toàn (tính cả nửa kích thước Boss)
+    this.x = Math.max(58, Math.min(902, this.x));
+    this.y = Math.max(58, Math.min(518, this.y));
 
     const movedDist = Math.hypot(this.x - prevX, this.y - prevY);
     this.isMoving =

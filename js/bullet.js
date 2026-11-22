@@ -86,84 +86,75 @@ export class Bullet {
       this.vy = Math.sin(newAngle) * this.speed;
     }
 
-    const prevX = this.x;
-    const prevY = this.y;
+    const moveX = this.vx * dt;
+    const moveY = this.vy * dt;
+    const moveDist = Math.hypot(moveX, moveY);
+    const maxStep = Math.max(4, this.radius);
+    const steps = Math.max(1, Math.min(8, Math.ceil(moveDist / maxStep)));
 
-    this.x += this.vx * dt;
-    this.y += this.vy * dt;
+    for (let s = 0; s < steps; s += 1) {
+      this.x += moveX / steps;
+      this.y += moveY / steps;
 
-    // Kiểm tra thêm trung điểm để tránh đạn nhanh xuyên qua góc vật cản 1 ô
-    const midX = (prevX + this.x) / 2;
-    const midY = (prevY + this.y) / 2;
-    if (map && map.isSolidAt(midX, midY)) {
-      this.active = false;
-      if (this.owner === 'player') {
-        audioManager.play('hit', { volume: 0.22, pitch: 0.8, minInterval: 0.05 });
-      }
-      return { x: midX, y: midY, color: this.color, isTargetHit: false };
-    }
-
-    if (
-      (map && map.isSolidAt(this.x, this.y)) ||
-      this.x < 0 ||
-      this.x > CANVAS_WIDTH ||
-      this.y < 0 ||
-      this.y > CANVAS_HEIGHT
-    ) {
-      this.active = false;
-      if (this.owner === 'player' && map && map.isSolidAt(this.x, this.y)) {
-        audioManager.play('hit', { volume: 0.22, pitch: 0.8, minInterval: 0.05 });
-      }
-      return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
-    }
-
-    if (this.owner === 'player') {
-      for (const enemy of enemies) {
-        if (!enemy || enemy.active === false) {
-          continue;
-        }
-        const enemyRadius = enemy.radius ?? 12;
-        const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
-        if (dist < this.radius + enemyRadius) {
-          this.active = false;
-          if (typeof enemy.takeDamage === 'function') {
-            enemy.takeDamage(this.damage);
-          } else {
-            enemy.hitFlashTimer = 0.12;
-          }
-          audioManager.play('hit', { volume: 0.35, pitch: 1.15, minInterval: 0.04 });
-          vfxManager.spawnFloatingText(
-            enemy.x,
-            enemy.y - 18,
-            `-${this.damage}`,
-            this.damage >= 4 ? '#ffd54f' : '#ffffff',
-            this.damage >= 4 ? 14 : 12,
-          );
-          vfxManager.spawnBurst(this.x, this.y, this.color, 4, 90, 0.18);
-          return { x: this.x, y: this.y, color: this.color, isTargetHit: true };
-        }
-      }
-    } else if (this.owner === 'enemy' && player) {
-      const playerRadius =
-        player.radius ??
-        Math.min(player.width ?? 22, player.height ?? 22) / 2;
-      const dist = Math.hypot(player.x - this.x, player.y - this.y);
-      if (dist < this.radius + playerRadius) {
-        if (player.isDashing) {
-          return null;
-        }
+      if (
+        (map && map.isSolidAt(this.x, this.y)) ||
+        this.x < 0 ||
+        this.x > CANVAS_WIDTH ||
+        this.y < 0 ||
+        this.y > CANVAS_HEIGHT
+      ) {
         this.active = false;
-        if (typeof player.takeDamage === 'function') {
-          player.takeDamage(this.damage);
-        } else {
-          player.triggerHitFlash?.();
+        if (this.owner === 'player' && map && map.isSolidAt(this.x, this.y)) {
+          audioManager.play('hit', { volume: 0.22, pitch: 0.8, minInterval: 0.05 });
         }
-        return {
-          x: this.x,
-          y: this.y,
-          color: this.homing ? '#ff6d00' : '#ff3b3b',
-          isTargetHit: true,
-        };
+        return { x: this.x, y: this.y, color: this.color, isTargetHit: false };
+      }
+
+      if (this.owner === 'player') {
+        for (const enemy of enemies) {
+          if (!enemy || enemy.active === false) {
+            continue;
+          }
+          const enemyRadius = enemy.radius ?? 12;
+          const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+          if (dist < this.radius + enemyRadius) {
+            this.active = false;
+            if (typeof enemy.takeDamage === 'function') {
+              enemy.takeDamage(this.damage);
+            } else {
+              enemy.hitFlashTimer = 0.12;
+            }
+            audioManager.play('hit', { volume: 0.35, pitch: 1.15, minInterval: 0.04 });
+            vfxManager.spawnFloatingText(
+              enemy.x,
+              enemy.y - 18,
+              `-${this.damage}`,
+              this.damage >= 4 ? '#ffd54f' : '#ffffff',
+              this.damage >= 4 ? 14 : 12,
+            );
+            vfxManager.spawnBurst(this.x, this.y, this.color, 4, 90, 0.18);
+            return { x: this.x, y: this.y, color: this.color, isTargetHit: true };
+          }
+        }
+      } else if (this.owner === 'enemy' && player && !player.isDashing) {
+        const playerRadius =
+          player.radius ??
+          Math.min(player.width ?? 22, player.height ?? 22) / 2;
+        const dist = Math.hypot(player.x - this.x, player.y - this.y);
+        if (dist < this.radius + playerRadius) {
+          this.active = false;
+          if (typeof player.takeDamage === 'function') {
+            player.takeDamage(this.damage);
+          } else {
+            player.triggerHitFlash?.();
+          }
+          return {
+            x: this.x,
+            y: this.y,
+            color: this.homing ? '#ff6d00' : '#ff3b3b',
+            isTargetHit: true,
+          };
+        }
       }
     }
 

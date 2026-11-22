@@ -299,6 +299,10 @@ export class Player {
       this.isMoving = this.#updateNormalMovement(dt, map);
     }
 
+    // Chốt tọa độ trong vùng sàn chơi an toàn (bên trong tường viền)
+    this.x = Math.max(44, Math.min(916, this.x));
+    this.y = Math.max(44, Math.min(532, this.y));
+
     const frameDuration = this.isMoving ? 0.085 : 0.14;
     this.animTimer += dt;
     while (this.animTimer >= frameDuration) {

@@ -201,17 +201,27 @@ export class Enemy {
       }
     }
 
-    // Lực đẩy tách nhẹ để các quái không chồng khít lên nhau
+    // Giới hạn lực đẩy tách và chia nhỏ bước di chuyển để tránh quái bị đẩy xuyên tường
     const sep = this.#computeSeparation(allEnemies);
-    const stepX = (vx + sep.x) * dt;
-    const stepY = (vy + sep.y) * dt;
+    const totalX = (vx + sep.x) * dt;
+    const totalY = (vy + sep.y) * dt;
+    const maxAxisStep = Math.max(Math.abs(totalX), Math.abs(totalY));
+    const substeps = Math.max(1, Math.min(4, Math.ceil(maxAxisStep / 10)));
+    const stepX = totalX / substeps;
+    const stepY = totalY / substeps;
 
-    if (stepX !== 0) {
-      this.#moveAxis('x', stepX, map);
+    for (let s = 0; s < substeps; s += 1) {
+      if (stepX !== 0) {
+        this.#moveAxis('x', stepX, map);
+      }
+      if (stepY !== 0) {
+        this.#moveAxis('y', stepY, map);
+      }
     }
-    if (stepY !== 0) {
-      this.#moveAxis('y', stepY, map);
-    }
+
+    // Chốt tọa độ trong vùng sàn an toàn để không bị đẩy ra ngoài tường viền
+    this.x = Math.max(44, Math.min(916, this.x));
+    this.y = Math.max(44, Math.min(532, this.y));
 
     this.isMoving = Math.hypot(this.x - prevX, this.y - prevY) > 0.25;
     const frameDuration = this.isMoving ? 0.11 : 0.17;
@@ -433,6 +443,14 @@ export class Enemy {
           sepX += push;
         }
       }
+    }
+
+    const sepLen = Math.hypot(sepX, sepY);
+    const maxSep = 160;
+    if (sepLen > maxSep) {
+      const scale = maxSep / sepLen;
+      sepX *= scale;
+      sepY *= scale;
     }
 
     return { x: sepX, y: sepY };
